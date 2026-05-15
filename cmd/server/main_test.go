@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -17,10 +19,11 @@ func newTestServer(t *testing.T) http.Handler {
 	if err != nil {
 		t.Fatalf("init: %v", err)
 	}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", handleHealth)
-	mux.HandleFunc("POST /orders/validate", handleValidate(svc))
-	return mux
+	mux.HandleFunc("POST /orders/validate", handleValidate(svc, logger))
+	return loggingMiddleware(logger, mux)
 }
 
 func TestHealth(t *testing.T) {

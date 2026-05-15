@@ -202,3 +202,5 @@ Plus one `daily_totals` row: `C001` has already traded 4 baht-weight today, leav
 ## Notes on AI assistance
 
 I used Claude (Anthropic) to brainstorm, draft initial code, and pressure-test my reasoning during this assessment. I verified every output by running the tests (`make ci`, which includes `-race`), walking through edge cases by hand, and re-reading each code path against the assessment requirements. See **§5 Tools** in `Part_4.md` for the full breakdown.
+#   f r i e n d l y - s y s t e m  
+ 
