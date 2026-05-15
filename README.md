@@ -109,7 +109,8 @@ The HTTP server (`cmd/server`) exposes:
 | Method | Path | Purpose |
 |---|---|---|
 | `GET`  | `/health` | liveness probe, returns `{"status":"ok"}` |
-| `POST` | `/orders/validate` | validate an order, returns the `Result` (see schema below) |
+| `POST` | `/orders/validate` | read-only validation, returns the `Result` (see schema below) |
+| `POST` | `/orders/process` | validate **and** execute: debits/credits balance, inserts audit row, increments daily ledger — all atomic in one tx. Requires `Idempotency-Key` header. Only available in GORM/SQLite mode (`-db <path>`). |
 
 ### Request body — `Order`
 
