@@ -259,8 +259,9 @@ I used **Claude (Anthropic)** during this assessment in two ways:
   ("am I sure SQL injection outranks the float-precision issue here?").
 - **For first drafts of mechanical code** — most of the test
   scaffolding (table-driven cases, the `dec` helper) and the
-  `cmd/demo/main.go` driver were drafted with Claude's help. The
-  `Validator.Validate` body is mine.
+  `cmd/seed/main.go` + `cmd/server/main.go` drivers were drafted with
+  Claude's help. The `Validator.Validate` body and the orchestration
+  in `service/validator/service.go` are mine.
 
 I verified the output by:
 

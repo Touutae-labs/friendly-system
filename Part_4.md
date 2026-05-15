@@ -13,8 +13,8 @@
 
 ### Dependency injection ผ่าน interface + Google Wire สำหรับ composition
 
-- **ที่เลือก:** แต่ละ module รับ port (interface) ตอน construct ผ่าน `New(...)` แล้วใช้ **Google Wire** เป็น composition root ที่ `wire/wire.go` — provider function ระบุว่า port ไหนผูกกับ adapter ตัวไหน + config ตัวไหน Wire จะ generate `wire_gen.go` เป็น constructor code ตอน `make generate`
-- **ราคาที่จ่าย:** เพิ่ม codegen step ใน dev workflow (`make generate` หลังเพิ่ม/ลบ dependency) + reviewer ต้องอ่าน `wire_gen.go` เพื่อดู topology ของ dependency tree ที่ runtime
+- **ที่เลือก:** แต่ละ module รับ port (interface) ตอน construct ผ่าน `New(...)` แล้วใช้ **Google Wire** เป็น composition root ที่ `wire/wire.go` — provider function ระบุว่า port ไหนผูกกับ adapter ตัวไหน + config ตัวไหน Wire จะ generate `wire_gen.go` เป็น constructor code ตอน `make wire` + `make mock`
+- **ราคาที่จ่าย:** เพิ่ม codegen step ใน dev workflow (`make wire` + `make mock` หลังเพิ่ม/ลบ dependency) + reviewer ต้องอ่าน `wire_gen.go` เพื่อดู topology ของ dependency tree ที่ runtime
 - **ที่ได้ ที่สำคัญที่สุด:** Wire ตรวจ DI graph ตอน **compile time** — ลืม register provider ของ port ไหน Wire แจ้งทันที ไม่ต้องรอ panic ตอน startup เหมือน reflection-based DI (uber-fx, dig) นอกจากนี้ test ใช้ memory adapter ที่อยู่ใน module เดียวกัน (`balance.NewMemory(...)`, `quote.NewMemory(...)`) production swap เป็น Redis/Postgres adapter โดยเปลี่ยน provider function ตัวเดียว — validator logic ใน module ไม่ต้องแตะ
 - **อีกประเด็น:** Wire เป็น codegen tool ไม่ใช่ runtime framework — production binary ไม่มี Wire dependency หลังจาก compile แล้ว build artifact สะอาดเท่า manual constructor
 
@@ -44,7 +44,7 @@
 - **ราคาที่จ่าย:** folder เยอะขึ้น (4 modules + service + adapters แยก folder) import path ยาวขึ้น (`domain/module/quote` แทนที่จะเป็น `validator` ตัวเดียว) — แต่ reviewer เปิด `domain/module/` ก็เห็นภาพรวม business sub-domain ทันทีว่ามีอะไรบ้าง — เป็น navigation aid ไม่ใช่ overhead
 - **ที่ได้ ที่จับต้องได้:**
   - test แต่ละ module pure ตามที่มันต้องการ — `orderval` ไม่ต้องมี mock เลย, `quote` mock แค่ `MarketPriceProvider` เท่านั้น — ไม่ต้องลากทั้ง stack มา test rule เดียว
-  - swap adapter ของ module ใดได้โดยไม่กระทบ module อื่น — `adapter/market/static.go` → `adapter/market/redis.go` กระทบแค่ `quote`
+  - swap adapter ของ module ใดได้โดยไม่กระทบ module อื่น — `quote.NewMemory(...)` (test/demo) → `repositories.NewMarket(...)` (production Redis) กระทบแค่ wire provider ของ `quote`
   - ถ้าวันหน้า `limit` ต้อง durable counter (Redis sorted set) แล้วโตเป็น service ของตัวเอง — boundary มันชัดอยู่แล้ว split ออกได้โดยไม่ต้องคุ้ย code
 - **Service orchestrator มี short-circuit logic ที่ไม่ใช่ของ module ใด module หนึ่ง:** shape fail → return ก่อน fetch market (เปลือง upstream feed), market unavailable → return ก่อน hit balance/ledger (fail closed) — pattern แบบนี้ถ้าฝัง logic เข้าไปใน module จะ blur boundary ปล่อยอยู่ใน service ที่รู้ context ของ flow ทั้งหมดดีกว่า
 - **เมื่อไรไม่ต้อง split แบบนี้:** rule set รู้แน่ว่านิ่งตลอด lifetime + ทีมเล็ก + ไม่มีแผน split microservice — overhead ของ 4 folder ไม่คุ้ม กลับไปใช้ Validator monolithic ตัวเดียวอ่านง่ายกว่า
@@ -161,11 +161,11 @@ services/
 ผมใช้ **Claude (Anthropic)** ใน assessment นี้ 2 แบบ
 
 - **เป็น reasoning partner** — ช่วย enumerate edge case ที่อาจมองข้าม (เช่น "ถ้า `expected` เป็น 0 ใน `withinTolerance` ล่ะ", "ถ้า customer's daily total เกิน limit แล้วก่อน order นี้มาล่ะ") + pressure-test การจัด ranking ใน Part 1 ("แน่ใจไหมว่า SQL injection ranks กว่า float precision?")
-- **draft mechanical code ตัวแรก** — test scaffolding (table-driven cases, helper `dec`) กับ `cmd/demo/main.go` driver ส่วนใหญ่ draft ด้วย Claude — body ของ `Validator.Validate` เป็นของผม
+- **draft mechanical code ตัวแรก** — test scaffolding (table-driven cases, helper `dec`) กับ `cmd/seed/main.go` + `cmd/server/main.go` driver ส่วนใหญ่ draft ด้วย Claude — body ของ `Validator.Validate` กับ orchestration ใน `service/validator/service.go` เป็นของผม
 
 วิธีที่ผม verify output
 
-- รัน `make ci` (= tidy + fmt-check + vet + test) และ `make test-race` — อ่าน failing test จนผ่าน
+- รัน `make ci` (= lint + test) และ `make ci` — อ่าน failing test จนผ่าน
 - Hand-walk ทุก error code อย่างน้อย 1 ครั้ง — ยืนยันว่า human-readable message อ่านแล้วเข้าใจในมุมลูกค้า ("balance 500.00 THB is less than required 42210.00 THB" ไม่ใช่ "ERR_INSUFFICIENT")
 - อ่าน assessment requirement ทีละ rule เทียบกับ implementation — tick ทุกอัน (order type, quantity positive + multiples of 0.5, positive price, sufficient balance for buys, ±2% freshness, 0.5% spread margin on buys, 5 baht-weight daily limit + remaining-allowance message) — requirement ทุกข้อ map ไป test ที่ตั้งชื่อไว้อย่างน้อย 1 อัน
 - อ่าน diff รอบสุดท้ายด้วย mindset เดียวกับ Part 1 — float ที่อยู่ผิดที่, error stringly-typed ที่ควรเป็น const, missing nil check — ไม่เจอใน final pass
