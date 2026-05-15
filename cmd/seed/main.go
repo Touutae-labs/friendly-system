@@ -12,17 +12,16 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+// Seeds sample data into a database whose schema has already been applied
+// by Atlas (`atlas schema apply --to file://schema.sql ...`). This program
+// only INSERTs — it does not create tables.
 func main() {
-	dbPath := flag.String("db", "./data.db", "path to SQLite database file")
+	dbPath := flag.String("db", "./data.db", "path to SQLite database (schema must be pre-applied)")
 	flag.Parse()
 
 	db, err := gorm.Open(sqlite.Open(*dbPath), &gorm.Config{})
 	if err != nil {
 		log.Fatalf("open %s: %v", *dbPath, err)
-	}
-
-	if err := db.AutoMigrate(repositories.AllModels()...); err != nil {
-		log.Fatalf("migrate: %v", err)
 	}
 
 	accounts := []repositories.AccountModel{
@@ -38,11 +37,7 @@ func main() {
 	}
 
 	today := time.Now().Format("2006-01-02")
-	dailyTotal := repositories.DailyTotalModel{
-		CustomerID: "C001",
-		Day:        today,
-		Total:      "4",
-	}
+	dailyTotal := repositories.DailyTotalModel{CustomerID: "C001", Day: today, Total: "4"}
 	if err := db.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "customer_id"}, {Name: "day"}},
 		DoUpdates: clause.AssignmentColumns([]string{"total"}),

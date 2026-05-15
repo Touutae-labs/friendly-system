@@ -5,21 +5,13 @@ Submitted by **Pantakan Totae** (`pantakan.totae@gmail.com`).
 ## Quickstart
 
 ```bash
-# 1. install code generators (one-time)
-make install-tools
-
-# 2. tidy + fmt + vet + test
-make
-
-# 3a. run the demo with in-memory adapters
-make demo
-
-# 3b. or seed a SQLite database and run against it
-make demo-sqlite
-
-# 4. start the HTTP server and hit it with .rest
-make server-sqlite               # listens on :8080
+make seed   # atlas schema apply + insert sample data into ./data.db
+make dev    # wgo run ./cmd/server -db ./data.db (auto-reload on file change)
 # then open api/orders.rest in VS Code (REST Client extension) and Send Request
+
+make ci     # go vet + go test -race ./...
+make wire   # regenerate wire/wire_gen.go
+make mock   # regenerate domain/mocks/*
 ```
 
 ## Layout
@@ -92,31 +84,23 @@ path is in Part 4 §4.
   - [`google/wire`](https://github.com/google/wire) — compile-time DI (codegen)
   - [`gorm.io/gorm`](https://gorm.io) + [`glebarez/sqlite`](https://github.com/glebarez/sqlite) — ORM + pure-Go SQLite driver (no CGO required)
   - [`stretchr/testify`](https://github.com/stretchr/testify) — Mockery runtime
-- **Code generators** (`make install-tools`):
-  - `go install github.com/google/wire/cmd/wire@latest`
-  - `go install github.com/vektra/mockery/v2@latest`
-- `make` optional but convenient
+- **Dev tools** (only required if you run the corresponding make target; generated outputs are committed so `make ci` works without any of them):
+  - `make seed` → [Atlas](https://atlasgo.io). Windows binary: `curl -L https://release.ariga.io/atlas/atlas-windows-amd64-latest.exe -o $(go env GOPATH)/bin/atlas.exe`
+  - `make dev` → `wgo`. Install with `go install github.com/bokwoon95/wgo@latest`
+  - `make wire` → `wire`. Install with `go install github.com/google/wire/cmd/wire@latest`
+  - `make mock` → `mockery`. Install with `go install github.com/vektra/mockery/v2@latest`
+  - On Windows / Git Bash: make sure `$(go env GOPATH)/bin` is in your `PATH`.
 - A REST client for `api/orders.rest`. Easiest is **VS Code + REST Client extension** (`humao.rest-client`). `curl` works too — examples below.
 
-## How to run
+## Make targets
 
-```bash
-make                # tidy + fmt-check + vet + test  (default = ci)
-make all            # ci + test-race + bench
-make install-tools  # install wire + mockery (first-time)
-make generate       # regenerate Wire injectors + Mockery mocks
-make build          # compile binaries into ./bin/
-make demo           # validator demo, in-memory adapters
-make seed           # create + seed ./data.db (GORM AutoMigrate)
-make demo-sqlite    # seed then demo against GORM/SQLite
-make server         # HTTP server :8080, in-memory adapters
-make server-sqlite  # seed then HTTP server against GORM/SQLite
-make test-race      # tests under race detector
-make bench          # benchmarks
-make cover          # coverage.html
-make clean          # remove ./bin, coverage, data.db, test cache
-make help           # list every target
-```
+| Target | Does |
+|---|---|
+| `make seed` | `atlas schema apply --to file://schema.sql` against `./data.db`, then insert sample accounts + one daily total via `cmd/seed` |
+| `make dev` | `wgo run ./cmd/server -db ./data.db` — HTTP server on `:8080` with auto-rebuild on file change |
+| `make ci` | `go vet ./...` + `go test -race ./...` |
+| `make wire` | regenerate `wire/wire_gen.go` |
+| `make mock` | regenerate `domain/mocks/*` |
 
 ## REST API
 

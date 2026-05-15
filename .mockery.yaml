@@ -1,6 +1,8 @@
 with-expecter: true
 quiet: false
 disable-version-string: true
+resolve-type-alias: false
+issue-845-fix: true
 filename: "{{.InterfaceName}}.go"
 dir: "domain/mocks/{{.PackageName}}"
 outpkg: "{{.PackageName}}mocks"
