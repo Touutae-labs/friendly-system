@@ -1,6 +1,8 @@
 package processor_test
 
 import (
+	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -21,10 +23,18 @@ func dec(s string) decimal.Decimal { return decimal.RequireFromString(s) }
 
 func setup(t *testing.T) (*processor.Service, *gorm.DB) {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	// :memory: with shared cache so concurrent connections see the same DB.
+	// We keep one *gorm.DB alive for the test's lifetime, which keeps the
+	// shared in-memory DB alive until the test ends.
+	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
+	t.Cleanup(func() {
+		if sqlDB, e := db.DB(); e == nil {
+			_ = sqlDB.Close()
+		}
+	})
 	if err := db.AutoMigrate(repositories.AllModels()...); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
@@ -41,7 +51,7 @@ func setup(t *testing.T) (*processor.Service, *gorm.DB) {
 	led, _ := limit.New(limit.DefaultConfig(), repositories.NewLedger(db))
 	svc := validatorsvc.New(ov, q, b, led)
 
-	proc := processor.New(db, svc)
+	proc := processor.New(db, svc, limit.DefaultConfig())
 	return proc, db
 }
 
@@ -177,6 +187,59 @@ func TestProcessor_FilledSellCreditsBalance(t *testing.T) {
 	want := dec("1000000").Add(dec("0.5").Mul(dec("42000")))
 	if !got.Equal(want) {
 		t.Errorf("sell must credit balance, got %s, want %s", got, want)
+	}
+}
+
+// Regression: 50 concurrent buys must never exceed the daily limit.
+// The earlier processor relied on the validator's preflight (read without
+// lock) and didn't re-check the limit inside the transaction, so all 50
+// would fill instead of just enough to hit the limit. The lock + tx-level
+// re-check fixed it.
+func TestProcessor_ConcurrentBuysDoNotExceedLimit(t *testing.T) {
+	proc, db := setup(t)
+	// pre-load C001's daily total so headroom is 1 baht-weight (4 of 5 used);
+	// each buy is 0.5 → only 2 should succeed.
+	today := time.Now().UTC().Format("2006-01-02")
+	if err := db.Create(&repositories.DailyTotalModel{CustomerID: "C001", Day: today, Total: "4"}).Error; err != nil {
+		t.Fatalf("seed daily: %v", err)
+	}
+	expBuy := dec("42000").Mul(decimal.NewFromInt(1).Add(quote.DefaultConfig().SpreadMargin))
+	o := order.Order{CustomerID: "C001", OrderType: order.Buy, Quantity: dec("0.5"), QuotedPrice: expBuy}
+
+	const N = 50
+	var wg sync.WaitGroup
+	results := make(chan processor.Status, N)
+	for i := 0; i < N; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			r := proc.Process(fmt.Sprintf("concurrent-%d", idx), o)
+			results <- r.Status
+		}(i)
+	}
+	wg.Wait()
+	close(results)
+
+	var filled, rejected int
+	for s := range results {
+		switch s {
+		case processor.StatusFilled:
+			filled++
+		case processor.StatusRejected:
+			rejected++
+		}
+	}
+	if filled != 2 {
+		t.Errorf("expected exactly 2 fills (headroom = 1, qty = 0.5), got %d filled / %d rejected", filled, rejected)
+	}
+
+	var dt repositories.DailyTotalModel
+	if err := db.Where("customer_id = ? AND day = ?", "C001", today).First(&dt).Error; err != nil {
+		t.Fatalf("read daily total: %v", err)
+	}
+	total, _ := decimal.NewFromString(dt.Total)
+	if total.GreaterThan(dec("5")) {
+		t.Errorf("daily_total %s exceeds limit 5 — TOCTOU bug regressed", total)
 	}
 }
 

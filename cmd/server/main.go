@@ -19,6 +19,7 @@ import (
 	validatorsvc "github.com/Touutae-labs/friendly-system/domain/service/validator"
 	"github.com/Touutae-labs/friendly-system/wire"
 	"gorm.io/gorm"
+	gormlogger "gorm.io/gorm/logger"
 )
 
 func main() {
@@ -205,7 +206,9 @@ func buildService(dbPath string) (*validatorsvc.Service, *processor.Service, fun
 		svc, err := wire.InitValidatorService()
 		return svc, nil, func() {}, err
 	}
-	db, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{})
+	db, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{
+		Logger: gormlogger.Default.LogMode(gormlogger.Silent),
+	})
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("open %s: %w", dbPath, err)
 	}

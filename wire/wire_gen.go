@@ -97,7 +97,7 @@ func InitProcessorService(db *gorm.DB) (*processor.Service, error) {
 		return nil, err
 	}
 	service := validatorsvc.New(validator, quoteValidator, balanceValidator, limitValidator)
-	processorService := processor.New(db, service)
+	processorService := processor.New(db, service, limitConfig)
 	return processorService, nil
 }
 

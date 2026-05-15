@@ -7,6 +7,7 @@ import (
 
 	"github.com/Touutae-labs/friendly-system/domain/common/order"
 	"github.com/Touutae-labs/friendly-system/domain/module/balance"
+	"github.com/Touutae-labs/friendly-system/domain/module/limit"
 	"github.com/Touutae-labs/friendly-system/domain/repositories"
 	validatorsvc "github.com/Touutae-labs/friendly-system/domain/service/validator"
 	"github.com/google/uuid"
@@ -35,18 +36,20 @@ type Result struct {
 }
 
 type Service struct {
-	db        *gorm.DB
-	validator *validatorsvc.Service
-	now       func() time.Time
-	newID     func() string
+	db         *gorm.DB
+	validator  *validatorsvc.Service
+	dailyLimit decimal.Decimal
+	now        func() time.Time
+	newID      func() string
 }
 
-func New(db *gorm.DB, validator *validatorsvc.Service) *Service {
+func New(db *gorm.DB, validator *validatorsvc.Service, limitCfg limit.Config) *Service {
 	return &Service{
-		db:        db,
-		validator: validator,
-		now:       time.Now,
-		newID:     func() string { return uuid.NewString() },
+		db:         db,
+		validator:  validator,
+		dailyLimit: limitCfg.DailyLimit,
+		now:        time.Now,
+		newID:      func() string { return uuid.NewString() },
 	}
 }
 
@@ -152,6 +155,21 @@ func (s *Service) Process(idempotencyKey string, o order.Order) Result {
 			return fmt.Errorf("read daily total: %w", err)
 		}
 		nextTotal := current.Add(o.Quantity)
+		if nextTotal.GreaterThan(s.dailyLimit) {
+			remainingBefore := s.dailyLimit.Sub(current)
+			if remainingBefore.IsNegative() {
+				remainingBefore = decimal.Zero
+			}
+			res.Status = StatusRejected
+			res.Reason = "daily limit exceeded"
+			res.DailyRemaining = &remainingBefore
+			res.ValidationErrors = []order.Error{{
+				Code:    limit.CodeDailyLimitExceeded,
+				Field:   "quantity",
+				Message: fmt.Sprintf("order quantity %s exceeds remaining daily allowance %s baht-weight", o.Quantity.String(), remainingBefore.String()),
+			}}
+			return errStopTx
+		}
 		if err := tx.Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "customer_id"}, {Name: "day"}},
 			DoUpdates: clause.AssignmentColumns([]string{"total"}),
@@ -166,7 +184,7 @@ func (s *Service) Process(idempotencyKey string, o order.Order) Result {
 		res.Status = StatusFilled
 		res.OrderID = orderID
 		res.NewBalance = &newBalance
-		remaining := decimal.RequireFromString("5").Sub(nextTotal)
+		remaining := s.dailyLimit.Sub(nextTotal)
 		if remaining.IsNegative() {
 			remaining = decimal.Zero
 		}

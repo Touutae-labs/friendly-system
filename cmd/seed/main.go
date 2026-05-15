@@ -33,7 +33,7 @@ func main() {
 		log.Fatalf("seed accounts: %v", err)
 	}
 
-	today := time.Now().Format("2006-01-02")
+	today := time.Now().UTC().Format("2006-01-02")
 	dailyTotal := repositories.DailyTotalModel{CustomerID: "C001", Day: today, Total: "4"}
 	if err := db.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "customer_id"}, {Name: "day"}},
