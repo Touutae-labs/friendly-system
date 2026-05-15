@@ -1,10 +1,11 @@
-# InterGold — Software Engineer Technical Assessment
+# Software Engineer Test
 
 Submitted by **Pantakan Totae** (`pantakan.totae@gmail.com`).
 
 ## Quickstart
 
 ```bash
+make wire   # regenerate wire/wire_gen.go
 make seed   # atlas schema apply + insert sample data into ./data.db
 make dev    # wgo run ./cmd/server -db ./data.db (auto-reload on file change)
 # then open api/orders.rest in VS Code (REST Client extension) and Send Request
