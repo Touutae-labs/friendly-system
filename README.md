@@ -4,14 +4,32 @@ Submitted by **Pantakan Totae** (`pantakan.totae@gmail.com`).
 
 ## Quickstart
 
+**Option A — zero external tools (in-memory mode).** Just Go is required:
+
+```bash
+go mod download
+go run ./cmd/server                 # HTTP server on :8080 with in-memory adapters
+# in another shell:
+curl -s http://localhost:8080/health
+curl -s http://localhost:8080/orders/validate \
+  -H 'Content-Type: application/json' \
+  -d '{"customer_id":"C001","order_type":"buy","quantity":"0.5","quoted_price":"42210"}'
+```
+
+**Option B — full SQLite + auto-reload (needs Atlas + wgo, see Dev tools below).**
+
 ```bash
 make seed   # atlas schema apply + insert sample data into ./data.db
-make dev    # wgo run ./cmd/server -db ./data.db (auto-reload on file change)
+make dev    # wgo run ./cmd/server -db ./data.db  (auto-reload on file change)
 # then open api/orders.rest in VS Code (REST Client extension) and Send Request
+```
 
+**Always works (no extra tools, just Go):**
+
+```bash
 make ci     # go vet + go test -race ./...
-make wire   # regenerate wire/wire_gen.go
-make mock   # regenerate domain/mocks/*
+make wire   # regenerate wire/wire_gen.go (only if you changed wire.go)
+make mock   # regenerate domain/mocks/*    (only if you changed an interface)
 ```
 
 ## Layout
@@ -78,7 +96,7 @@ path is in Part 4 §4.
 
 ## Requirements
 
-- **Go 1.22+**
+- **Go 1.25+**
 - **Module dependencies** (fetched on first `go mod tidy`):
   - [`shopspring/decimal`](https://github.com/shopspring/decimal) — exact decimal arithmetic for money
   - [`google/wire`](https://github.com/google/wire) — compile-time DI (codegen)
