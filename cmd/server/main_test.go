@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pantakan/intergold-validator/wire"
+	"github.com/Touutae-labs/friendly-system/wire"
 )
 
 func newTestServer(t *testing.T) http.Handler {

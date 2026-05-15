@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/pantakan/intergold-validator/domain/common/order"
+	"github.com/Touutae-labs/friendly-system/domain/common/order"
 	"github.com/shopspring/decimal"
 )
 

@@ -1,9 +1,9 @@
 package wire
 
 import (
-	"github.com/pantakan/intergold-validator/domain/module/balance"
-	"github.com/pantakan/intergold-validator/domain/module/limit"
-	"github.com/pantakan/intergold-validator/domain/repositories"
+	"github.com/Touutae-labs/friendly-system/domain/module/balance"
+	"github.com/Touutae-labs/friendly-system/domain/module/limit"
+	"github.com/Touutae-labs/friendly-system/domain/repositories"
 	"gorm.io/gorm"
 )
 

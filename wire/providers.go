@@ -3,9 +3,9 @@ package wire
 import (
 	"time"
 
-	"github.com/pantakan/intergold-validator/domain/module/balance"
-	"github.com/pantakan/intergold-validator/domain/module/limit"
-	"github.com/pantakan/intergold-validator/domain/module/quote"
+	"github.com/Touutae-labs/friendly-system/domain/module/balance"
+	"github.com/Touutae-labs/friendly-system/domain/module/limit"
+	"github.com/Touutae-labs/friendly-system/domain/module/quote"
 	"github.com/shopspring/decimal"
 )
 

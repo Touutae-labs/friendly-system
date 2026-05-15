@@ -5,14 +5,30 @@ Submitted by **Pantakan Totae** (`pantakan.totae@gmail.com`).
 ## Quickstart
 
 ```bash
-make seed   # atlas schema apply + insert sample data into ./data.db
-make dev    # wgo run ./cmd/server -db ./data.db (auto-reload on file change)
-# then open api/orders.rest in VS Code (REST Client extension) and Send Request
+# 1. clone
+git clone git@github.com:Touutae-labs/friendly-system.git && cd friendly-system
 
-make ci     # go vet + go test -race ./...
-make wire   # regenerate wire/wire_gen.go
-make mock   # regenerate domain/mocks/*
+# 2. install everything (Go 1.22+ assumed; installs atlas + wgo + wire + mockery)
+make install
+
+# 3. run tests — works with zero state, no DB needed
+make ci
+
+# 4. seed DB + start server (writes ./data.db, server on :8080)
+make seed
+make dev
+
+# 5. in another shell — try a few orders
+curl -s http://localhost:8080/health
+curl -s http://localhost:8080/orders/validate \
+  -H 'Content-Type: application/json' \
+  -d '{"customer_id":"C001","order_type":"buy","quantity":"0.5","quoted_price":"42210"}'
+
+# or open api/orders.rest in VS Code (REST Client extension) and Send Request
 ```
+
+> **Linux/macOS:** `make install` installs everything from official channels.
+> **Windows users** without `make`: see the [Without make](#without-make) section.
 
 ## Layout
 
@@ -96,11 +112,35 @@ path is in Part 4 §4.
 
 | Target | Does |
 |---|---|
+| `make install` | install all dev tools: `wire`, `mockery`, `wgo`, `atlas`, plus `go mod download` |
+| `make ci` | `go vet ./...` + `go test -race ./...` |
 | `make seed` | `atlas schema apply --to file://schema.sql` against `./data.db`, then insert sample accounts + one daily total via `cmd/seed` |
 | `make dev` | `wgo run ./cmd/server -db ./data.db` — HTTP server on `:8080` with auto-rebuild on file change |
-| `make ci` | `go vet ./...` + `go test -race ./...` |
 | `make wire` | regenerate `wire/wire_gen.go` |
 | `make mock` | regenerate `domain/mocks/*` |
+| `make all` | full from-scratch verification: install + regenerate + lint + test |
+
+## Without `make`
+
+Windows + PowerShell, no `make` installed:
+
+```powershell
+# install tools
+go install github.com/google/wire/cmd/wire@latest
+go install github.com/vektra/mockery/v2@latest
+go install github.com/bokwoon95/wgo@latest
+curl -L https://release.ariga.io/atlas/atlas-windows-amd64-latest.exe -o "$(go env GOPATH)\bin\atlas.exe"
+go mod download
+
+# ci
+go vet ./...
+go test -race ./...
+
+# seed + server
+atlas schema apply --url "sqlite://data.db" --to "file://schema.sql" --dev-url "sqlite://dev?mode=memory" --auto-approve
+go run ./cmd/seed -db ./data.db
+go run ./cmd/server -db ./data.db
+```
 
 ## REST API
 

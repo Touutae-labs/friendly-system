@@ -6,12 +6,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pantakan/intergold-validator/domain/common/order"
-	"github.com/pantakan/intergold-validator/domain/module/balance"
-	"github.com/pantakan/intergold-validator/domain/module/limit"
-	"github.com/pantakan/intergold-validator/domain/module/orderval"
-	"github.com/pantakan/intergold-validator/domain/module/quote"
-	validatorsvc "github.com/pantakan/intergold-validator/domain/service/validator"
+	"github.com/Touutae-labs/friendly-system/domain/common/order"
+	"github.com/Touutae-labs/friendly-system/domain/module/balance"
+	"github.com/Touutae-labs/friendly-system/domain/module/limit"
+	"github.com/Touutae-labs/friendly-system/domain/module/orderval"
+	"github.com/Touutae-labs/friendly-system/domain/module/quote"
+	validatorsvc "github.com/Touutae-labs/friendly-system/domain/service/validator"
 	"github.com/shopspring/decimal"
 )
 

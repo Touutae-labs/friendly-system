@@ -5,8 +5,8 @@ import (
 	"testing"
 
 	"github.com/glebarez/sqlite"
-	"github.com/pantakan/intergold-validator/domain/module/balance"
-	"github.com/pantakan/intergold-validator/domain/repositories"
+	"github.com/Touutae-labs/friendly-system/domain/module/balance"
+	"github.com/Touutae-labs/friendly-system/domain/repositories"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 )

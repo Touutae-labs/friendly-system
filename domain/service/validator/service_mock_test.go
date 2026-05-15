@@ -4,12 +4,12 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/pantakan/intergold-validator/domain/common/order"
-	balancemocks "github.com/pantakan/intergold-validator/domain/mocks/balance"
-	limitmocks "github.com/pantakan/intergold-validator/domain/mocks/limit"
-	quotemocks "github.com/pantakan/intergold-validator/domain/mocks/quote"
-	"github.com/pantakan/intergold-validator/domain/module/balance"
-	"github.com/pantakan/intergold-validator/domain/module/limit"
+	"github.com/Touutae-labs/friendly-system/domain/common/order"
+	balancemocks "github.com/Touutae-labs/friendly-system/domain/mocks/balance"
+	limitmocks "github.com/Touutae-labs/friendly-system/domain/mocks/limit"
+	quotemocks "github.com/Touutae-labs/friendly-system/domain/mocks/quote"
+	"github.com/Touutae-labs/friendly-system/domain/module/balance"
+	"github.com/Touutae-labs/friendly-system/domain/module/limit"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/mock"
 )

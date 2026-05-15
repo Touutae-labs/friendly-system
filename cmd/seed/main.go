@@ -7,14 +7,11 @@ import (
 	"time"
 
 	"github.com/glebarez/sqlite"
-	"github.com/pantakan/intergold-validator/domain/repositories"
+	"github.com/Touutae-labs/friendly-system/domain/repositories"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
-// Seeds sample data into a database whose schema has already been applied
-// by Atlas (`atlas schema apply --to file://schema.sql ...`). This program
-// only INSERTs — it does not create tables.
 func main() {
 	dbPath := flag.String("db", "./data.db", "path to SQLite database (schema must be pre-applied)")
 	flag.Parse()

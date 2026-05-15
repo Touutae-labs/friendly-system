@@ -1,4 +1,4 @@
-module github.com/pantakan/intergold-validator
+module github.com/Touutae-labs/friendly-system
 
 go 1.25.0
 

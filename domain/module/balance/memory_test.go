@@ -4,7 +4,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/pantakan/intergold-validator/domain/module/balance"
+	"github.com/Touutae-labs/friendly-system/domain/module/balance"
 	"github.com/shopspring/decimal"
 )
 

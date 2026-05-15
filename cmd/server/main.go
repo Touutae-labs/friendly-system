@@ -14,10 +14,10 @@ import (
 	"time"
 
 	"github.com/glebarez/sqlite"
-	"github.com/pantakan/intergold-validator/domain/common/order"
-	"github.com/pantakan/intergold-validator/domain/service/processor"
-	validatorsvc "github.com/pantakan/intergold-validator/domain/service/validator"
-	"github.com/pantakan/intergold-validator/wire"
+	"github.com/Touutae-labs/friendly-system/domain/common/order"
+	"github.com/Touutae-labs/friendly-system/domain/service/processor"
+	validatorsvc "github.com/Touutae-labs/friendly-system/domain/service/validator"
+	"github.com/Touutae-labs/friendly-system/wire"
 	"gorm.io/gorm"
 )
 

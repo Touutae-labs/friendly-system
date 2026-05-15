@@ -8,12 +8,12 @@ dir: "domain/mocks/{{.PackageName}}"
 outpkg: "{{.PackageName}}mocks"
 mockname: "{{.InterfaceName}}"
 packages:
-  github.com/pantakan/intergold-validator/domain/module/balance:
+  github.com/Touutae-labs/friendly-system/domain/module/balance:
     interfaces:
       AccountRepository:
-  github.com/pantakan/intergold-validator/domain/module/quote:
+  github.com/Touutae-labs/friendly-system/domain/module/quote:
     interfaces:
       MarketPriceProvider:
-  github.com/pantakan/intergold-validator/domain/module/limit:
+  github.com/Touutae-labs/friendly-system/domain/module/limit:
     interfaces:
       DailyLedger:

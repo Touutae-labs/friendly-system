@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pantakan/intergold-validator/domain/repositories"
+	"github.com/Touutae-labs/friendly-system/domain/repositories"
 	"github.com/shopspring/decimal"
 )
 

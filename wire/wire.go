@@ -5,12 +5,12 @@ package wire
 
 import (
 	googlewire "github.com/google/wire"
-	"github.com/pantakan/intergold-validator/domain/module/balance"
-	"github.com/pantakan/intergold-validator/domain/module/limit"
-	"github.com/pantakan/intergold-validator/domain/module/orderval"
-	"github.com/pantakan/intergold-validator/domain/module/quote"
-	"github.com/pantakan/intergold-validator/domain/service/processor"
-	validatorsvc "github.com/pantakan/intergold-validator/domain/service/validator"
+	"github.com/Touutae-labs/friendly-system/domain/module/balance"
+	"github.com/Touutae-labs/friendly-system/domain/module/limit"
+	"github.com/Touutae-labs/friendly-system/domain/module/orderval"
+	"github.com/Touutae-labs/friendly-system/domain/module/quote"
+	"github.com/Touutae-labs/friendly-system/domain/service/processor"
+	validatorsvc "github.com/Touutae-labs/friendly-system/domain/service/validator"
 	"gorm.io/gorm"
 )
 

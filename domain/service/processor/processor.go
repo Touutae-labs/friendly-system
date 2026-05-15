@@ -1,19 +1,3 @@
-// Package processor ports the legacy Python `process_gold_order` to Go with
-// every fix called out in Part 1:
-//
-//  1. SQL injection      → GORM parameterised queries everywhere
-//  2. Float arithmetic   → shopspring/decimal for every money/quantity value
-//  3. No transaction     → db.Transaction wraps balance + order + ledger writes
-//  4. Race condition     → clause.Locking{Strength:"UPDATE"} (SELECT FOR UPDATE)
-//                          on accounts; re-check balance/limit under the lock
-//  5. Sell no validation → run the same Validator that buy orders pass through
-//  6. Customer crash /   → explicit ErrCustomerNotFound, structured result,
-//     resource leak /      idempotency-key dedupe of double POSTs
-//     no input validation
-//
-// Plus honourable mentions: no PII in logs (only customer_id), idempotent
-// retries via the Idempotency-Key header, consistent Result shape (never
-// nil), and a durable audit row per execution.
 package processor
 
 import (
@@ -21,11 +5,11 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/Touutae-labs/friendly-system/domain/common/order"
+	"github.com/Touutae-labs/friendly-system/domain/module/balance"
+	"github.com/Touutae-labs/friendly-system/domain/repositories"
+	validatorsvc "github.com/Touutae-labs/friendly-system/domain/service/validator"
 	"github.com/google/uuid"
-	"github.com/pantakan/intergold-validator/domain/common/order"
-	"github.com/pantakan/intergold-validator/domain/module/balance"
-	"github.com/pantakan/intergold-validator/domain/repositories"
-	validatorsvc "github.com/pantakan/intergold-validator/domain/service/validator"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -34,20 +18,20 @@ import (
 type Status string
 
 const (
-	StatusFilled     Status = "filled"
-	StatusRejected   Status = "rejected"
-	StatusDuplicate  Status = "duplicate"
-	StatusError      Status = "error"
+	StatusFilled    Status = "filled"
+	StatusRejected  Status = "rejected"
+	StatusDuplicate Status = "duplicate"
+	StatusError     Status = "error"
 )
 
 type Result struct {
-	Status           Status            `json:"status"`
-	OrderID          string            `json:"order_id,omitempty"`
-	IdempotencyKey   string            `json:"idempotency_key"`
-	NewBalance       *decimal.Decimal  `json:"new_balance,omitempty"`
-	DailyRemaining   *decimal.Decimal  `json:"daily_remaining,omitempty"`
-	ValidationErrors []order.Error     `json:"validation_errors,omitempty"`
-	Reason           string            `json:"reason,omitempty"`
+	Status           Status           `json:"status"`
+	OrderID          string           `json:"order_id,omitempty"`
+	IdempotencyKey   string           `json:"idempotency_key"`
+	NewBalance       *decimal.Decimal `json:"new_balance,omitempty"`
+	DailyRemaining   *decimal.Decimal `json:"daily_remaining,omitempty"`
+	ValidationErrors []order.Error    `json:"validation_errors,omitempty"`
+	Reason           string           `json:"reason,omitempty"`
 }
 
 type Service struct {
@@ -66,11 +50,6 @@ func New(db *gorm.DB, validator *validatorsvc.Service) *Service {
 	}
 }
 
-// Process runs preflight validation, then inside a single transaction it
-// locks the customer's account row, re-validates with locked data, applies
-// the balance change, inserts an audit row, and increments the daily ledger.
-// idempotencyKey must be non-empty; the orders.idempotency_key UNIQUE index
-// makes a retried POST a no-op that returns the original Result.
 func (s *Service) Process(idempotencyKey string, o order.Order) Result {
 	res := Result{IdempotencyKey: idempotencyKey}
 
@@ -80,8 +59,6 @@ func (s *Service) Process(idempotencyKey string, o order.Order) Result {
 		return res
 	}
 
-	// Idempotency short-circuit: replay the prior Result if this key was
-	// already processed. Cheap read, no tx needed.
 	if prior, ok, err := s.lookupPrior(idempotencyKey); err != nil {
 		res.Status = StatusError
 		res.Reason = "idempotency lookup failed"
@@ -91,10 +68,6 @@ func (s *Service) Process(idempotencyKey string, o order.Order) Result {
 		return prior
 	}
 
-	// Preflight validate — fast reject for shape / market / static balance
-	// issues. The authoritative check happens again inside the tx with the
-	// account row locked, so we don't trust this for correctness; it's just
-	// the cheap path.
 	preflight := s.validator.Validate(o)
 	if !preflight.Valid {
 		res.Status = StatusRejected
@@ -105,14 +78,11 @@ func (s *Service) Process(idempotencyKey string, o order.Order) Result {
 	cost := o.Quantity.Mul(o.QuotedPrice)
 
 	txErr := s.db.Transaction(func(tx *gorm.DB) error {
-		// Patch #4: SELECT FOR UPDATE so two concurrent processes for the
-		// same customer serialise instead of both reading the same balance.
 		var acct repositories.AccountModel
 		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("customer_id = ?", o.CustomerID).
 			First(&acct).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			// Patch #6 part A: explicit not-found rather than a NoneType crash.
 			res.Status = StatusRejected
 			res.Reason = "customer not found"
 			res.ValidationErrors = []order.Error{{Code: balance.CodeCustomerNotFound, Field: "customer_id", Message: "customer not found"}}
@@ -122,7 +92,6 @@ func (s *Service) Process(idempotencyKey string, o order.Order) Result {
 			return fmt.Errorf("lock account: %w", err)
 		}
 
-		// Patch #2: decimal arithmetic on the locked value.
 		bal, err := decimal.NewFromString(acct.Balance)
 		if err != nil {
 			return fmt.Errorf("parse balance: %w", err)
@@ -131,8 +100,6 @@ func (s *Service) Process(idempotencyKey string, o order.Order) Result {
 		var newBalance decimal.Decimal
 		switch o.OrderType {
 		case order.Buy:
-			// Re-check balance under the lock — defends against the buy-twice
-			// race the Python code shipped with.
 			if bal.LessThan(cost) {
 				res.Status = StatusRejected
 				res.Reason = "insufficient balance"
@@ -143,12 +110,9 @@ func (s *Service) Process(idempotencyKey string, o order.Order) Result {
 		case order.Sell:
 			newBalance = bal.Add(cost)
 		default:
-			// Validator already rejected this, so reaching here is a bug.
 			return fmt.Errorf("unexpected order_type %q after validation", o.OrderType)
 		}
 
-		// Patch #3: write balance, audit row, and ledger increment inside
-		// the same tx — commit-or-rollback as a unit.
 		if err := tx.Model(&repositories.AccountModel{}).
 			Where("customer_id = ?", o.CustomerID).
 			Update("balance", newBalance.String()).Error; err != nil {
@@ -172,8 +136,6 @@ func (s *Service) Process(idempotencyKey string, o order.Order) Result {
 			return fmt.Errorf("insert order: %w", err)
 		}
 
-		// Same ledger semantics as repositories.Ledger.Record, but inline so
-		// we stay in this transaction rather than opening a nested one.
 		dayKey := now.UTC().Format("2006-01-02")
 		var dt repositories.DailyTotalModel
 		err = tx.Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -204,8 +166,6 @@ func (s *Service) Process(idempotencyKey string, o order.Order) Result {
 		res.Status = StatusFilled
 		res.OrderID = orderID
 		res.NewBalance = &newBalance
-		// Daily remaining AFTER this order's quantity is applied.
-		// The validator's DefaultConfig daily limit is 5 baht-weight.
 		remaining := decimal.RequireFromString("5").Sub(nextTotal)
 		if remaining.IsNegative() {
 			remaining = decimal.Zero
@@ -215,15 +175,12 @@ func (s *Service) Process(idempotencyKey string, o order.Order) Result {
 	})
 
 	if txErr != nil && !errors.Is(txErr, errStopTx) {
-		// Real error (DB went away, parse failure, etc). Don't leak detail.
 		res.Status = StatusError
 		res.Reason = "persistence error"
 	}
 	return res
 }
 
-// lookupPrior returns a Result rebuilt from a stored OrderModel if the
-// idempotency key matches a prior successful execution.
 func (s *Service) lookupPrior(key string) (Result, bool, error) {
 	var row repositories.OrderModel
 	err := s.db.Where("idempotency_key = ?", key).First(&row).Error
@@ -242,6 +199,4 @@ func (s *Service) lookupPrior(key string) (Result, bool, error) {
 	}, true, nil
 }
 
-// errStopTx is a sentinel that aborts a tx without surfacing as a "real"
-// error — used when the rejection reason is already recorded on res.
 var errStopTx = errors.New("stop tx")
