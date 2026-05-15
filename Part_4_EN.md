@@ -162,36 +162,56 @@ What I would **keep**:
 - Decimal arithmetic — gets *more* important at scale, not less.
 - The "fail closed when the market price is unavailable" rule.
 
-What I would **change**:
+What I **already built into this submission** (the foundation of the
+scale path):
 
-- **Move balance + ledger lookups into a single transactional read** in
-  the order-execution service that calls the validator, so we don't
-  validate against a balance that's already stale by the time we apply
-  the order. The validator stays pure; the call site stitches it into a
-  `BEGIN; SELECT FOR UPDATE; validate; UPDATE; COMMIT;` flow.
-- **Replace `limit.Memory`** with a real store. Two reasonable
-  shapes: a Redis sorted set keyed `customer:YYYY-MM-DD` with a TTL of
-  48h, or a `daily_totals` row updated transactionally with the order.
-  Whichever the team picks, the in-memory implementation goes away the
-  day it ships.
+- **Executor service that does `BEGIN; SELECT FOR UPDATE; validate;
+  UPDATE; COMMIT;` for real.** Lives in `domain/service/processor`.
+  Accepts an Order + an `Idempotency-Key` header, locks the account
+  row, re-checks balance and daily limit under that lock, debits or
+  credits, inserts an `orders` audit row, and increments the daily
+  ledger — all in one transaction. The validator stays pure and
+  read-only.
+- **`limit.Memory` swapped for a GORM `daily_totals` row** updated
+  transactionally with the order (`domain/repositories/ledger.go`,
+  using `clause.Locking{Strength: "UPDATE"}` — a real row lock on
+  Postgres/MySQL, a serialised tx on SQLite).
+- **Idempotency keys** — `Idempotency-Key` header plus a UNIQUE index
+  on `orders.idempotency_key`. A retried POST is a no-op that returns
+  the original Result with `status: "duplicate"` and the original
+  `order_id`. No double-debit possible.
+- **Durable audit row per execution** — every filled order writes an
+  `orders` row capturing customer, side, quantity, quoted price, total,
+  the resulting balance, and timestamp.
+- **Structured request + business logging via `log/slog`.** One line
+  per HTTP request (`method`, `path`, `status`, `duration_ms`) and one
+  per validate/process (`customer_id`, `order_type`, `quantity`,
+  `valid`, `error_codes`). No PII: customer name is never logged.
+- **HTTP hardening:** `ReadHeaderTimeout`, `Read/WriteTimeout`,
+  `DisallowUnknownFields` on the JSON decoder, graceful shutdown on
+  `SIGINT`/`SIGTERM`.
+
+What I would still **change** as the load grows:
+
 - **Cache the market price** with a short TTL (~250–500 ms). At
   thousands of orders/minute, refetching per validate is wasteful and
   punishes the upstream feed. I would also add a "price age" field to
   `Result` so callers can trace bad fills back to a stale tick.
-- **Add observability:** validation latency histogram, error-code
-  counter, and a structured log line per invalid result with
-  `customer_id`, `error_code`, request-trace ID. Without this you cannot
-  tell whether a sudden spike in `STALE_OR_OFF_PRICE` is an upstream
-  feed wobble or genuine market movement.
-- **Idempotency keys** on the calling order-submission API to dedupe
-  retries.
+- **Deeper observability:** validation latency histograms, error-code
+  counters, and a request-trace ID that threads through gateway →
+  validator → processor. Today the slog output is structured but
+  carries no trace ID.
 - **Per-customer rate limit** (orders/sec) at the API boundary, before
   validation.
 - **Separate "cheap" pre-validation** (shape rules) into the API gateway
   so we can reject obvious garbage without burning a market lookup.
-  Validator's heavier rules stay in the order service.
+  The heavier rules stay in the order service.
 - **Property-based tests** in addition to the table-driven ones — to
   fuzz quantity/price boundaries.
+- **Outbox pattern** for downstream events: each filled order writes
+  an outbox row inside the same transaction, and a separate publisher
+  loop fans the events out to Kafka / NATS / customer-notification
+  systems. Decouples the trading path from downstream availability.
 
 **Service split: validator + price feed + execution (when horizontal
 scale demands it).** At thousands of orders/min, refetching the market

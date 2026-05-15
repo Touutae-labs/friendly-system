@@ -103,16 +103,23 @@
 - "Fail closed when market price unavailable" rule
 - Hardening pieces ที่เพิ่งทำ: config validation, sanity ceilings, customer_id scrubbing — ทั้งหมดยิ่งสำคัญที่ scale
 
-### สิ่งที่ผมจะ change
+### สิ่งที่ผม build ไปแล้วใน submission นี้ (เป็นพื้นฐานของ scale path)
 
-- **ย้าย balance + ledger lookup เป็น single transactional read** ใน order-execution service ที่ call validator — เพื่อไม่ validate กับ balance ที่ stale ตอน apply — validator คงเดิมแบบ pure, call site แค่ stitch เข้า `BEGIN; SELECT FOR UPDATE; validate; UPDATE; COMMIT;` flow
-- **เปลี่ยน `limit.Memory` เป็น real store** — 2 shape ที่เป็นไปได้: (1) Redis sorted set key `customer:YYYY-MM-DD` TTL 48h, (2) `daily_totals` row update transactional กับ order — ทีมเลือกอย่างไรก็ได้ in-memory implementation หายไปวันที่ ship
+- **Executor service ทำ `BEGIN; SELECT FOR UPDATE; validate; UPDATE; COMMIT;` จริง** — อยู่ที่ `domain/service/processor` รับ Order + Idempotency-Key, lock account row, recheck balance/limit ใต้ lock, debit/credit, insert order audit row, increment daily ledger — ทั้งหมดใน tx เดียว validator ยังเป็น pure read-only เหมือนเดิม
+- **`limit.Memory` swap เป็น GORM `daily_totals` row** ที่ update transactional กับ order — `domain/repositories/ledger.go` ใช้ `clause.Locking{Strength: "UPDATE"}` (Postgres/MySQL row lock; SQLite serialised tx)
+- **Idempotency keys** — `Idempotency-Key` header + UNIQUE index บน `orders.idempotency_key` retry POST = no double-debit ตอบ `status: "duplicate"` พร้อม `order_id` เดิม
+- **Durable audit row per execution** — ทุก filled order มี row ใน `orders` table (customer_id, order_type, quantity, quoted_price, total, new_balance, created_at)
+- **Structured request + business logging** — `log/slog` text format ทุก request log: method/path/status/duration_ms; ทุก validate/process log: customer_id/order_type/quantity/valid/error_codes (ไม่มี PII — ไม่ log ชื่อลูกค้า)
+- **HTTP hardening** — `ReadHeaderTimeout`, `Read/WriteTimeout`, `DisallowUnknownFields` ใน JSON decoder, graceful shutdown บน SIGINT/SIGTERM
+
+### สิ่งที่ผมจะ change เพิ่ม (ถ้าโตขึ้น)
+
 - **Cache market price** ด้วย short TTL (~250–500 ms) — ที่ thousands/min, refetch ต่อ validate มันสิ้นเปลือง + รังแก upstream feed — เพิ่ม "price age" field ใน `Result` ด้วย caller จะ trace bad fill กลับ tick stale ได้
-- **เพิ่ม observability:** validation latency histogram, error-code counter, structured log line per invalid result พร้อม `customer_id`, `error_code`, request-trace ID — ไม่มีอันนี้บอกไม่ได้ว่า spike ของ `STALE_OR_OFF_PRICE` คือ upstream feed wobble หรือ market move จริง
-- **Idempotency keys** บน calling order-submission API เพื่อ dedupe retry
+- **Observability ที่ลึกกว่านี้:** validation latency histogram, error-code counter, request-trace ID ที่ผูกระหว่าง gateway → validator → processor (ตอนนี้ slog log มีแค่ structured fields ยังไม่มี trace ID)
 - **Per-customer rate limit** (orders/sec) ที่ API boundary ก่อน validation
 - **Split "cheap" pre-validation** (shape rules) ไป API gateway → reject garbage โดยไม่เผา market lookup, validator's heavier rules อยู่ใน order service
 - **Property-based tests** เพิ่มจาก table-driven — fuzz quantity/price boundaries
+- **Outbox pattern** สำหรับ event publishing — order filled → publish ไป Kafka/NATS ใน outbox row ของ tx เดียวกัน, separate publisher loop ไป downstream system (settlement, accounting, customer notification)
 
 ### Service split: validator + price feed + execution (เมื่อ scale มาถึงจุดที่ต้องแยก)
 
