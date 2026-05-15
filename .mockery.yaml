@@ -1,0 +1,17 @@
+with-expecter: true
+quiet: false
+disable-version-string: true
+filename: "{{.InterfaceName}}.go"
+dir: "domain/mocks/{{.PackageName}}"
+outpkg: "{{.PackageName}}mocks"
+mockname: "{{.InterfaceName}}"
+packages:
+  github.com/pantakan/intergold-validator/domain/module/balance:
+    interfaces:
+      AccountRepository:
+  github.com/pantakan/intergold-validator/domain/module/quote:
+    interfaces:
+      MarketPriceProvider:
+  github.com/pantakan/intergold-validator/domain/module/limit:
+    interfaces:
+      DailyLedger:
