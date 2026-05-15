@@ -6,7 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -25,19 +25,23 @@ func main() {
 	dbPath := flag.String("db", "", "SQLite database path (omit for in-memory adapters)")
 	flag.Parse()
 
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	slog.SetDefault(logger)
+
 	svc, cleanup, err := buildService(*dbPath)
 	if err != nil {
-		log.Fatalf("build: %v", err)
+		logger.Error("build service", "err", err)
+		os.Exit(1)
 	}
 	defer cleanup()
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", handleHealth)
-	mux.HandleFunc("POST /orders/validate", handleValidate(svc))
+	mux.HandleFunc("POST /orders/validate", handleValidate(svc, logger))
 
 	srv := &http.Server{
 		Addr:              *addr,
-		Handler:           mux,
+		Handler:           loggingMiddleware(logger, mux),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      10 * time.Second,
@@ -51,40 +55,93 @@ func main() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if err := srv.Shutdown(ctx); err != nil {
-			log.Printf("shutdown: %v", err)
+			logger.Error("shutdown", "err", err)
 		}
 		close(idleConnsClosed)
 	}()
 
-	mode := "in-memory adapters"
+	mode := "in-memory"
 	if *dbPath != "" {
-		mode = fmt.Sprintf("GORM/SQLite db=%s", *dbPath)
+		mode = "gorm-sqlite:" + *dbPath
 	}
-	log.Printf("listening on %s (%s)", *addr, mode)
+	logger.Info("server starting", "addr", *addr, "mode", mode)
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		log.Fatalf("server: %v", err)
+		logger.Error("listen", "err", err)
+		os.Exit(1)
 	}
 	<-idleConnsClosed
-	log.Println("shutdown complete")
+	logger.Info("server stopped")
+}
+
+// loggingMiddleware emits one structured log line per HTTP request with
+// method, path, status, and duration. Captures status via a wrapped
+// ResponseWriter.
+func loggingMiddleware(logger *slog.Logger, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		rw := &statusWriter{ResponseWriter: w, status: http.StatusOK}
+		next.ServeHTTP(rw, r)
+		logger.Info("request",
+			"method", r.Method,
+			"path", r.URL.Path,
+			"status", rw.status,
+			"duration_ms", time.Since(start).Milliseconds(),
+			"remote", r.RemoteAddr,
+		)
+	})
+}
+
+type statusWriter struct {
+	http.ResponseWriter
+	status      int
+	wroteHeader bool
+}
+
+func (sw *statusWriter) WriteHeader(code int) {
+	if !sw.wroteHeader {
+		sw.status = code
+		sw.wroteHeader = true
+	}
+	sw.ResponseWriter.WriteHeader(code)
 }
 
 func handleHealth(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-func handleValidate(svc *validatorsvc.Service) http.HandlerFunc {
+func handleValidate(svc *validatorsvc.Service, logger *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		dec := json.NewDecoder(r.Body)
 		dec.DisallowUnknownFields()
 
 		var o order.Order
 		if err := dec.Decode(&o); err != nil {
+			logger.Warn("decode order", "err", err)
 			writeJSON(w, http.StatusBadRequest, map[string]string{
 				"error": fmt.Sprintf("invalid request body: %v", err),
 			})
 			return
 		}
-		writeJSON(w, http.StatusOK, svc.Validate(o))
+
+		result := svc.Validate(o)
+
+		attrs := []any{
+			"customer_id", o.CustomerID,
+			"order_type", string(o.OrderType),
+			"quantity", o.Quantity.String(),
+			"quoted_price", o.QuotedPrice.String(),
+			"valid", result.Valid,
+		}
+		if !result.Valid && len(result.Errors) > 0 {
+			codes := make([]string, len(result.Errors))
+			for i, e := range result.Errors {
+				codes[i] = e.Code
+			}
+			attrs = append(attrs, "error_codes", codes)
+		}
+		logger.Info("validate", attrs...)
+
+		writeJSON(w, http.StatusOK, result)
 	}
 }
 
