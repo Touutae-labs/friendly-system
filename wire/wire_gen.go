@@ -12,6 +12,7 @@ import (
 	"github.com/pantakan/intergold-validator/domain/module/limit"
 	"github.com/pantakan/intergold-validator/domain/module/orderval"
 	"github.com/pantakan/intergold-validator/domain/module/quote"
+	"github.com/pantakan/intergold-validator/domain/service/processor"
 	"github.com/pantakan/intergold-validator/domain/service/validator"
 	"gorm.io/gorm"
 )
@@ -70,6 +71,34 @@ func InitValidatorServiceGorm(db *gorm.DB) (*validatorsvc.Service, error) {
 	}
 	service := validatorsvc.New(validator, quoteValidator, balanceValidator, limitValidator)
 	return service, nil
+}
+
+func InitProcessorService(db *gorm.DB) (*processor.Service, error) {
+	config := orderval.DefaultConfig()
+	validator, err := orderval.New(config)
+	if err != nil {
+		return nil, err
+	}
+	quoteConfig := quote.DefaultConfig()
+	marketPriceProvider := provideMarket()
+	quoteValidator, err := quote.New(quoteConfig, marketPriceProvider)
+	if err != nil {
+		return nil, err
+	}
+	accountRepository := provideAccountsGorm(db)
+	balanceValidator, err := balance.New(accountRepository)
+	if err != nil {
+		return nil, err
+	}
+	limitConfig := limit.DefaultConfig()
+	dailyLedger := provideLedgerGorm(db)
+	limitValidator, err := limit.New(limitConfig, dailyLedger)
+	if err != nil {
+		return nil, err
+	}
+	service := validatorsvc.New(validator, quoteValidator, balanceValidator, limitValidator)
+	processorService := processor.New(db, service)
+	return processorService, nil
 }
 
 // wire.go:

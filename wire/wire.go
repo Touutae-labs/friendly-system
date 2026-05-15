@@ -9,6 +9,7 @@ import (
 	"github.com/pantakan/intergold-validator/domain/module/limit"
 	"github.com/pantakan/intergold-validator/domain/module/orderval"
 	"github.com/pantakan/intergold-validator/domain/module/quote"
+	"github.com/pantakan/intergold-validator/domain/service/processor"
 	validatorsvc "github.com/pantakan/intergold-validator/domain/service/validator"
 	"gorm.io/gorm"
 )
@@ -40,6 +41,17 @@ func InitValidatorServiceGorm(db *gorm.DB) (*validatorsvc.Service, error) {
 		provideMarket,
 		provideLedgerGorm,
 		moduleSet,
+	)
+	return nil, nil
+}
+
+func InitProcessorService(db *gorm.DB) (*processor.Service, error) {
+	googlewire.Build(
+		provideAccountsGorm,
+		provideMarket,
+		provideLedgerGorm,
+		moduleSet,
+		processor.New,
 	)
 	return nil, nil
 }

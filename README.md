@@ -5,7 +5,6 @@ Submitted by **Pantakan Totae** (`pantakan.totae@gmail.com`).
 ## Quickstart
 
 ```bash
-make wire   # regenerate wire/wire_gen.go
 make seed   # atlas schema apply + insert sample data into ./data.db
 make dev    # wgo run ./cmd/server -db ./data.db (auto-reload on file change)
 # then open api/orders.rest in VS Code (REST Client extension) and Send Request
@@ -110,7 +109,8 @@ The HTTP server (`cmd/server`) exposes:
 | Method | Path | Purpose |
 |---|---|---|
 | `GET`  | `/health` | liveness probe, returns `{"status":"ok"}` |
-| `POST` | `/orders/validate` | validate an order, returns the `Result` (see schema below) |
+| `POST` | `/orders/validate` | read-only validation, returns the `Result` (see schema below) |
+| `POST` | `/orders/process` | validate **and** execute: debits/credits balance, inserts audit row, increments daily ledger — all atomic in one tx. Requires `Idempotency-Key` header. Only available in GORM/SQLite mode (`-db <path>`). |
 
 ### Request body — `Order`
 
@@ -203,5 +203,4 @@ Plus one `daily_totals` row: `C001` has already traded 4 baht-weight today, leav
 ## Notes on AI assistance
 
 I used Claude (Anthropic) to brainstorm, draft initial code, and pressure-test my reasoning during this assessment. I verified every output by running the tests (`make ci`, which includes `-race`), walking through edge cases by hand, and re-reading each code path against the assessment requirements. See **§5 Tools** in `Part_4.md` for the full breakdown.
-#   f r i e n d l y - s y s t e m  
- 
+# friendly-system

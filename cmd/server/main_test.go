@@ -23,6 +23,8 @@ func newTestServer(t *testing.T) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", handleHealth)
 	mux.HandleFunc("POST /orders/validate", handleValidate(svc, logger))
+	// in-memory mode skips /orders/process — tests for that endpoint
+	// live in domain/service/processor (against an in-memory GORM DB)
 	return loggingMiddleware(logger, mux)
 }
 

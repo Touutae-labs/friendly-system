@@ -15,6 +15,7 @@ import (
 
 	"github.com/glebarez/sqlite"
 	"github.com/pantakan/intergold-validator/domain/common/order"
+	"github.com/pantakan/intergold-validator/domain/service/processor"
 	validatorsvc "github.com/pantakan/intergold-validator/domain/service/validator"
 	"github.com/pantakan/intergold-validator/wire"
 	"gorm.io/gorm"
@@ -28,7 +29,7 @@ func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	slog.SetDefault(logger)
 
-	svc, cleanup, err := buildService(*dbPath)
+	svc, proc, cleanup, err := buildService(*dbPath)
 	if err != nil {
 		logger.Error("build service", "err", err)
 		os.Exit(1)
@@ -38,6 +39,9 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", handleHealth)
 	mux.HandleFunc("POST /orders/validate", handleValidate(svc, logger))
+	if proc != nil {
+		mux.HandleFunc("POST /orders/process", handleProcess(proc, logger))
+	}
 
 	srv := &http.Server{
 		Addr:              *addr,
@@ -145,29 +149,78 @@ func handleValidate(svc *validatorsvc.Service, logger *slog.Logger) http.Handler
 	}
 }
 
+func handleProcess(proc *processor.Service, logger *slog.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		key := r.Header.Get("Idempotency-Key")
+		if key == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{
+				"error": "Idempotency-Key header is required",
+			})
+			return
+		}
+
+		dec := json.NewDecoder(r.Body)
+		dec.DisallowUnknownFields()
+		var o order.Order
+		if err := dec.Decode(&o); err != nil {
+			logger.Warn("decode order", "err", err)
+			writeJSON(w, http.StatusBadRequest, map[string]string{
+				"error": fmt.Sprintf("invalid request body: %v", err),
+			})
+			return
+		}
+
+		result := proc.Process(key, o)
+
+		logger.Info("process",
+			"customer_id", o.CustomerID,
+			"order_type", string(o.OrderType),
+			"quantity", o.Quantity.String(),
+			"status", string(result.Status),
+			"order_id", result.OrderID,
+			"idempotency_key", key,
+		)
+
+		switch result.Status {
+		case processor.StatusFilled, processor.StatusDuplicate:
+			writeJSON(w, http.StatusOK, result)
+		case processor.StatusRejected:
+			writeJSON(w, http.StatusUnprocessableEntity, result)
+		default:
+			writeJSON(w, http.StatusInternalServerError, result)
+		}
+	}
+}
+
 func writeJSON(w http.ResponseWriter, status int, body any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(body)
 }
 
-func buildService(dbPath string) (*validatorsvc.Service, func(), error) {
+func buildService(dbPath string) (*validatorsvc.Service, *processor.Service, func(), error) {
 	if dbPath == "" {
+		// In-memory mode has no transactional store, so /orders/process is
+		// not exposed. /orders/validate still works.
 		svc, err := wire.InitValidatorService()
-		return svc, func() {}, err
+		return svc, nil, func() {}, err
 	}
 	db, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{})
 	if err != nil {
-		return nil, nil, fmt.Errorf("open %s: %w", dbPath, err)
+		return nil, nil, nil, fmt.Errorf("open %s: %w", dbPath, err)
 	}
 	svc, err := wire.InitValidatorServiceGorm(db)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
+	}
+	proc, err := wire.InitProcessorService(db)
+	if err != nil {
+		return nil, nil, nil, err
 	}
 	cleanup := func() {
 		if sqlDB, e := db.DB(); e == nil {
 			_ = sqlDB.Close()
 		}
 	}
-	return svc, cleanup, nil
+	return svc, proc, cleanup, nil
 }
