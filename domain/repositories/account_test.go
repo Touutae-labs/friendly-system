@@ -9,11 +9,14 @@ import (
 	"github.com/Touutae-labs/friendly-system/domain/repositories"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
+	gormlogger "gorm.io/gorm/logger"
 )
 
 func newDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{
+		Logger: gormlogger.Default.LogMode(gormlogger.Silent),
+	})
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}

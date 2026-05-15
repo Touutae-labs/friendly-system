@@ -17,6 +17,7 @@ import (
 	validatorsvc "github.com/Touutae-labs/friendly-system/domain/service/validator"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
+	gormlogger "gorm.io/gorm/logger"
 )
 
 func dec(s string) decimal.Decimal { return decimal.RequireFromString(s) }
@@ -26,7 +27,9 @@ func setup(t *testing.T) (*processor.Service, *gorm.DB) {
 	// :memory: with shared cache so concurrent connections see the same DB.
 	// We keep one *gorm.DB alive for the test's lifetime, which keeps the
 	// shared in-memory DB alive until the test ends.
-	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{})
+	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{
+		Logger: gormlogger.Default.LogMode(gormlogger.Silent),
+	})
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
