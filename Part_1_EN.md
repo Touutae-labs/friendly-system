@@ -1,7 +1,7 @@
 # Part 1 — Analysis of the Flawed `process_gold_order` (English version)
 
 **Submitted by:** Pantakan Totae · `pantakan.totae@gmail.com`
-**Date:** 2026-05-15
+**Date:** 2026-05-16
 **Repo:** see `README.md` for layout and how to run.
 **Thai version:** [`Part_1.md`](Part_1.md)
 
