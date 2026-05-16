@@ -128,7 +128,7 @@ func handleValidate(svc *validatorsvc.Service, logger *slog.Logger) http.Handler
 			return
 		}
 
-		result := svc.Validate(o)
+		result := svc.Validate(r.Context(), o)
 
 		attrs := []any{
 			"customer_id", o.CustomerID,

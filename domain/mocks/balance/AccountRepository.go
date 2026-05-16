@@ -3,7 +3,11 @@
 package balancemocks
 
 import (
+	context "context"
+
 	decimal "github.com/shopspring/decimal"
+	gorm "gorm.io/gorm"
+
 	mock "github.com/stretchr/testify/mock"
 )
 
@@ -20,9 +24,9 @@ func (_m *AccountRepository) EXPECT() *AccountRepository_Expecter {
 	return &AccountRepository_Expecter{mock: &_m.Mock}
 }
 
-// Balance provides a mock function with given fields: customerID
-func (_m *AccountRepository) Balance(customerID string) (decimal.Decimal, error) {
-	ret := _m.Called(customerID)
+// Balance provides a mock function with given fields: ctx, customerID
+func (_m *AccountRepository) Balance(ctx context.Context, customerID string) (decimal.Decimal, error) {
+	ret := _m.Called(ctx, customerID)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Balance")
@@ -30,17 +34,17 @@ func (_m *AccountRepository) Balance(customerID string) (decimal.Decimal, error)
 
 	var r0 decimal.Decimal
 	var r1 error
-	if rf, ok := ret.Get(0).(func(string) (decimal.Decimal, error)); ok {
-		return rf(customerID)
+	if rf, ok := ret.Get(0).(func(context.Context, string) (decimal.Decimal, error)); ok {
+		return rf(ctx, customerID)
 	}
-	if rf, ok := ret.Get(0).(func(string) decimal.Decimal); ok {
-		r0 = rf(customerID)
+	if rf, ok := ret.Get(0).(func(context.Context, string) decimal.Decimal); ok {
+		r0 = rf(ctx, customerID)
 	} else {
 		r0 = ret.Get(0).(decimal.Decimal)
 	}
 
-	if rf, ok := ret.Get(1).(func(string) error); ok {
-		r1 = rf(customerID)
+	if rf, ok := ret.Get(1).(func(context.Context, string) error); ok {
+		r1 = rf(ctx, customerID)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -54,14 +58,15 @@ type AccountRepository_Balance_Call struct {
 }
 
 // Balance is a helper method to define mock.On call
+//   - ctx context.Context
 //   - customerID string
-func (_e *AccountRepository_Expecter) Balance(customerID interface{}) *AccountRepository_Balance_Call {
-	return &AccountRepository_Balance_Call{Call: _e.mock.On("Balance", customerID)}
+func (_e *AccountRepository_Expecter) Balance(ctx interface{}, customerID interface{}) *AccountRepository_Balance_Call {
+	return &AccountRepository_Balance_Call{Call: _e.mock.On("Balance", ctx, customerID)}
 }
 
-func (_c *AccountRepository_Balance_Call) Run(run func(customerID string)) *AccountRepository_Balance_Call {
+func (_c *AccountRepository_Balance_Call) Run(run func(ctx context.Context, customerID string)) *AccountRepository_Balance_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(string))
+		run(args[0].(context.Context), args[1].(string))
 	})
 	return _c
 }
@@ -71,7 +76,114 @@ func (_c *AccountRepository_Balance_Call) Return(_a0 decimal.Decimal, _a1 error)
 	return _c
 }
 
-func (_c *AccountRepository_Balance_Call) RunAndReturn(run func(string) (decimal.Decimal, error)) *AccountRepository_Balance_Call {
+func (_c *AccountRepository_Balance_Call) RunAndReturn(run func(context.Context, string) (decimal.Decimal, error)) *AccountRepository_Balance_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// LockAndGetBalance provides a mock function with given fields: ctx, tx, customerID
+func (_m *AccountRepository) LockAndGetBalance(ctx context.Context, tx *gorm.DB, customerID string) (decimal.Decimal, error) {
+	ret := _m.Called(ctx, tx, customerID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for LockAndGetBalance")
+	}
+
+	var r0 decimal.Decimal
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, *gorm.DB, string) (decimal.Decimal, error)); ok {
+		return rf(ctx, tx, customerID)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, *gorm.DB, string) decimal.Decimal); ok {
+		r0 = rf(ctx, tx, customerID)
+	} else {
+		r0 = ret.Get(0).(decimal.Decimal)
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, *gorm.DB, string) error); ok {
+		r1 = rf(ctx, tx, customerID)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// AccountRepository_LockAndGetBalance_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'LockAndGetBalance'
+type AccountRepository_LockAndGetBalance_Call struct {
+	*mock.Call
+}
+
+// LockAndGetBalance is a helper method to define mock.On call
+//   - ctx context.Context
+//   - tx *gorm.DB
+//   - customerID string
+func (_e *AccountRepository_Expecter) LockAndGetBalance(ctx interface{}, tx interface{}, customerID interface{}) *AccountRepository_LockAndGetBalance_Call {
+	return &AccountRepository_LockAndGetBalance_Call{Call: _e.mock.On("LockAndGetBalance", ctx, tx, customerID)}
+}
+
+func (_c *AccountRepository_LockAndGetBalance_Call) Run(run func(ctx context.Context, tx *gorm.DB, customerID string)) *AccountRepository_LockAndGetBalance_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].(*gorm.DB), args[2].(string))
+	})
+	return _c
+}
+
+func (_c *AccountRepository_LockAndGetBalance_Call) Return(_a0 decimal.Decimal, _a1 error) *AccountRepository_LockAndGetBalance_Call {
+	_c.Call.Return(_a0, _a1)
+	return _c
+}
+
+func (_c *AccountRepository_LockAndGetBalance_Call) RunAndReturn(run func(context.Context, *gorm.DB, string) (decimal.Decimal, error)) *AccountRepository_LockAndGetBalance_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// UpdateBalance provides a mock function with given fields: ctx, tx, customerID, newBalance
+func (_m *AccountRepository) UpdateBalance(ctx context.Context, tx *gorm.DB, customerID string, newBalance decimal.Decimal) error {
+	ret := _m.Called(ctx, tx, customerID, newBalance)
+
+	if len(ret) == 0 {
+		panic("no return value specified for UpdateBalance")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(context.Context, *gorm.DB, string, decimal.Decimal) error); ok {
+		r0 = rf(ctx, tx, customerID, newBalance)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
+// AccountRepository_UpdateBalance_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'UpdateBalance'
+type AccountRepository_UpdateBalance_Call struct {
+	*mock.Call
+}
+
+// UpdateBalance is a helper method to define mock.On call
+//   - ctx context.Context
+//   - tx *gorm.DB
+//   - customerID string
+//   - newBalance decimal.Decimal
+func (_e *AccountRepository_Expecter) UpdateBalance(ctx interface{}, tx interface{}, customerID interface{}, newBalance interface{}) *AccountRepository_UpdateBalance_Call {
+	return &AccountRepository_UpdateBalance_Call{Call: _e.mock.On("UpdateBalance", ctx, tx, customerID, newBalance)}
+}
+
+func (_c *AccountRepository_UpdateBalance_Call) Run(run func(ctx context.Context, tx *gorm.DB, customerID string, newBalance decimal.Decimal)) *AccountRepository_UpdateBalance_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].(*gorm.DB), args[2].(string), args[3].(decimal.Decimal))
+	})
+	return _c
+}
+
+func (_c *AccountRepository_UpdateBalance_Call) Return(_a0 error) *AccountRepository_UpdateBalance_Call {
+	_c.Call.Return(_a0)
+	return _c
+}
+
+func (_c *AccountRepository_UpdateBalance_Call) RunAndReturn(run func(context.Context, *gorm.DB, string, decimal.Decimal) error) *AccountRepository_UpdateBalance_Call {
 	_c.Call.Return(run)
 	return _c
 }

@@ -3,7 +3,10 @@
 package limitmocks
 
 import (
+	context "context"
+
 	decimal "github.com/shopspring/decimal"
+	gorm "gorm.io/gorm"
 
 	mock "github.com/stretchr/testify/mock"
 
@@ -23,9 +26,68 @@ func (_m *DailyLedger) EXPECT() *DailyLedger_Expecter {
 	return &DailyLedger_Expecter{mock: &_m.Mock}
 }
 
-// TradedToday provides a mock function with given fields: customerID, now
-func (_m *DailyLedger) TradedToday(customerID string, now time.Time) (decimal.Decimal, error) {
-	ret := _m.Called(customerID, now)
+// LockAndGetTotal provides a mock function with given fields: ctx, tx, customerID, day
+func (_m *DailyLedger) LockAndGetTotal(ctx context.Context, tx *gorm.DB, customerID string, day string) (decimal.Decimal, error) {
+	ret := _m.Called(ctx, tx, customerID, day)
+
+	if len(ret) == 0 {
+		panic("no return value specified for LockAndGetTotal")
+	}
+
+	var r0 decimal.Decimal
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, *gorm.DB, string, string) (decimal.Decimal, error)); ok {
+		return rf(ctx, tx, customerID, day)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, *gorm.DB, string, string) decimal.Decimal); ok {
+		r0 = rf(ctx, tx, customerID, day)
+	} else {
+		r0 = ret.Get(0).(decimal.Decimal)
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, *gorm.DB, string, string) error); ok {
+		r1 = rf(ctx, tx, customerID, day)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// DailyLedger_LockAndGetTotal_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'LockAndGetTotal'
+type DailyLedger_LockAndGetTotal_Call struct {
+	*mock.Call
+}
+
+// LockAndGetTotal is a helper method to define mock.On call
+//   - ctx context.Context
+//   - tx *gorm.DB
+//   - customerID string
+//   - day string
+func (_e *DailyLedger_Expecter) LockAndGetTotal(ctx interface{}, tx interface{}, customerID interface{}, day interface{}) *DailyLedger_LockAndGetTotal_Call {
+	return &DailyLedger_LockAndGetTotal_Call{Call: _e.mock.On("LockAndGetTotal", ctx, tx, customerID, day)}
+}
+
+func (_c *DailyLedger_LockAndGetTotal_Call) Run(run func(ctx context.Context, tx *gorm.DB, customerID string, day string)) *DailyLedger_LockAndGetTotal_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].(*gorm.DB), args[2].(string), args[3].(string))
+	})
+	return _c
+}
+
+func (_c *DailyLedger_LockAndGetTotal_Call) Return(_a0 decimal.Decimal, _a1 error) *DailyLedger_LockAndGetTotal_Call {
+	_c.Call.Return(_a0, _a1)
+	return _c
+}
+
+func (_c *DailyLedger_LockAndGetTotal_Call) RunAndReturn(run func(context.Context, *gorm.DB, string, string) (decimal.Decimal, error)) *DailyLedger_LockAndGetTotal_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// TradedToday provides a mock function with given fields: ctx, customerID, now
+func (_m *DailyLedger) TradedToday(ctx context.Context, customerID string, now time.Time) (decimal.Decimal, error) {
+	ret := _m.Called(ctx, customerID, now)
 
 	if len(ret) == 0 {
 		panic("no return value specified for TradedToday")
@@ -33,17 +95,17 @@ func (_m *DailyLedger) TradedToday(customerID string, now time.Time) (decimal.De
 
 	var r0 decimal.Decimal
 	var r1 error
-	if rf, ok := ret.Get(0).(func(string, time.Time) (decimal.Decimal, error)); ok {
-		return rf(customerID, now)
+	if rf, ok := ret.Get(0).(func(context.Context, string, time.Time) (decimal.Decimal, error)); ok {
+		return rf(ctx, customerID, now)
 	}
-	if rf, ok := ret.Get(0).(func(string, time.Time) decimal.Decimal); ok {
-		r0 = rf(customerID, now)
+	if rf, ok := ret.Get(0).(func(context.Context, string, time.Time) decimal.Decimal); ok {
+		r0 = rf(ctx, customerID, now)
 	} else {
 		r0 = ret.Get(0).(decimal.Decimal)
 	}
 
-	if rf, ok := ret.Get(1).(func(string, time.Time) error); ok {
-		r1 = rf(customerID, now)
+	if rf, ok := ret.Get(1).(func(context.Context, string, time.Time) error); ok {
+		r1 = rf(ctx, customerID, now)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -57,15 +119,16 @@ type DailyLedger_TradedToday_Call struct {
 }
 
 // TradedToday is a helper method to define mock.On call
+//   - ctx context.Context
 //   - customerID string
 //   - now time.Time
-func (_e *DailyLedger_Expecter) TradedToday(customerID interface{}, now interface{}) *DailyLedger_TradedToday_Call {
-	return &DailyLedger_TradedToday_Call{Call: _e.mock.On("TradedToday", customerID, now)}
+func (_e *DailyLedger_Expecter) TradedToday(ctx interface{}, customerID interface{}, now interface{}) *DailyLedger_TradedToday_Call {
+	return &DailyLedger_TradedToday_Call{Call: _e.mock.On("TradedToday", ctx, customerID, now)}
 }
 
-func (_c *DailyLedger_TradedToday_Call) Run(run func(customerID string, now time.Time)) *DailyLedger_TradedToday_Call {
+func (_c *DailyLedger_TradedToday_Call) Run(run func(ctx context.Context, customerID string, now time.Time)) *DailyLedger_TradedToday_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(string), args[1].(time.Time))
+		run(args[0].(context.Context), args[1].(string), args[2].(time.Time))
 	})
 	return _c
 }
@@ -75,7 +138,57 @@ func (_c *DailyLedger_TradedToday_Call) Return(_a0 decimal.Decimal, _a1 error) *
 	return _c
 }
 
-func (_c *DailyLedger_TradedToday_Call) RunAndReturn(run func(string, time.Time) (decimal.Decimal, error)) *DailyLedger_TradedToday_Call {
+func (_c *DailyLedger_TradedToday_Call) RunAndReturn(run func(context.Context, string, time.Time) (decimal.Decimal, error)) *DailyLedger_TradedToday_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// UpsertTotal provides a mock function with given fields: ctx, tx, customerID, day, newTotal
+func (_m *DailyLedger) UpsertTotal(ctx context.Context, tx *gorm.DB, customerID string, day string, newTotal decimal.Decimal) error {
+	ret := _m.Called(ctx, tx, customerID, day, newTotal)
+
+	if len(ret) == 0 {
+		panic("no return value specified for UpsertTotal")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(context.Context, *gorm.DB, string, string, decimal.Decimal) error); ok {
+		r0 = rf(ctx, tx, customerID, day, newTotal)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
+// DailyLedger_UpsertTotal_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'UpsertTotal'
+type DailyLedger_UpsertTotal_Call struct {
+	*mock.Call
+}
+
+// UpsertTotal is a helper method to define mock.On call
+//   - ctx context.Context
+//   - tx *gorm.DB
+//   - customerID string
+//   - day string
+//   - newTotal decimal.Decimal
+func (_e *DailyLedger_Expecter) UpsertTotal(ctx interface{}, tx interface{}, customerID interface{}, day interface{}, newTotal interface{}) *DailyLedger_UpsertTotal_Call {
+	return &DailyLedger_UpsertTotal_Call{Call: _e.mock.On("UpsertTotal", ctx, tx, customerID, day, newTotal)}
+}
+
+func (_c *DailyLedger_UpsertTotal_Call) Run(run func(ctx context.Context, tx *gorm.DB, customerID string, day string, newTotal decimal.Decimal)) *DailyLedger_UpsertTotal_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].(*gorm.DB), args[2].(string), args[3].(string), args[4].(decimal.Decimal))
+	})
+	return _c
+}
+
+func (_c *DailyLedger_UpsertTotal_Call) Return(_a0 error) *DailyLedger_UpsertTotal_Call {
+	_c.Call.Return(_a0)
+	return _c
+}
+
+func (_c *DailyLedger_UpsertTotal_Call) RunAndReturn(run func(context.Context, *gorm.DB, string, string, decimal.Decimal) error) *DailyLedger_UpsertTotal_Call {
 	_c.Call.Return(run)
 	return _c
 }

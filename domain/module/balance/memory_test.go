@@ -1,6 +1,7 @@
 package balance_test
 
 import (
+	"context"
 	"sync"
 	"testing"
 
@@ -24,7 +25,7 @@ func TestMemory_ConcurrentReadWrite(t *testing.T) {
 				if i%2 == 0 {
 					repo.Set("C001", decimal.NewFromInt(int64(i*j)))
 				} else {
-					_, _ = repo.Balance("C001")
+					_, _ = repo.Balance(context.Background(), "C001")
 				}
 			}
 		}()

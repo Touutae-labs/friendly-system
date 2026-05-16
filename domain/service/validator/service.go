@@ -1,6 +1,8 @@
 package validatorsvc
 
 import (
+	"context"
+
 	"github.com/Touutae-labs/friendly-system/domain/common/order"
 	"github.com/Touutae-labs/friendly-system/domain/module/balance"
 	"github.com/Touutae-labs/friendly-system/domain/module/limit"
@@ -11,15 +13,15 @@ import (
 type Service struct {
 	orderval *orderval.Validator
 	quote    *quote.Validator
-	balance  *balance.Validator
-	limit    *limit.Validator
+	balance  *balance.Module
+	limit    *limit.Module
 }
 
 func New(
 	ov *orderval.Validator,
 	q *quote.Validator,
-	b *balance.Validator,
-	l *limit.Validator,
+	b *balance.Module,
+	l *limit.Module,
 ) *Service {
 	return &Service{
 		orderval: ov,
@@ -29,7 +31,7 @@ func New(
 	}
 }
 
-func (s *Service) Validate(o order.Order) order.Result {
+func (s *Service) Validate(ctx context.Context, o order.Order) order.Result {
 	res := order.Result{Valid: true}
 
 	s.orderval.Apply(o, &res)
@@ -37,16 +39,16 @@ func (s *Service) Validate(o order.Order) order.Result {
 		return res
 	}
 
-	if ok := s.quote.Apply(o, &res); !ok {
+	if ok := s.quote.Apply(ctx, o, &res); !ok {
 		return res
 	}
 
 	if o.OrderType == order.Buy {
-		s.balance.Apply(o, &res)
+		s.balance.Validate(ctx, o, &res)
 	}
 
 	if s.limit != nil {
-		s.limit.Apply(o, &res)
+		s.limit.Validate(ctx, o, &res)
 	}
 
 	return res

@@ -1,6 +1,7 @@
 package repositories_test
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -35,7 +36,7 @@ func TestAccount_Balance_HappyPath(t *testing.T) {
 		t.Fatalf("seed: %v", err)
 	}
 	repo := repositories.NewAccount(db)
-	got, err := repo.Balance("C001")
+	got, err := repo.Balance(context.Background(), "C001")
 	if err != nil {
 		t.Fatalf("Balance: %v", err)
 	}
@@ -47,7 +48,7 @@ func TestAccount_Balance_HappyPath(t *testing.T) {
 func TestAccount_Balance_NotFound(t *testing.T) {
 	db := newDB(t)
 	repo := repositories.NewAccount(db)
-	_, err := repo.Balance("GHOST")
+	_, err := repo.Balance(context.Background(), "GHOST")
 	if !errors.Is(err, balance.ErrCustomerNotFound) {
 		t.Errorf("expected ErrCustomerNotFound, got %v", err)
 	}

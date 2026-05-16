@@ -1,6 +1,7 @@
 package quote
 
 import (
+	"context"
 	"errors"
 
 	"github.com/shopspring/decimal"
@@ -12,5 +13,5 @@ var ErrPriceUnavailable = errors.New("market price unavailable")
 // Naming follows the Provider pattern (not Repository) because we don't own
 // or persist the data — we fetch it from an external source on demand.
 type MarketPriceProvider interface {
-	CurrentPrice() (decimal.Decimal, error)
+	CurrentPrice(ctx context.Context) (decimal.Decimal, error)
 }

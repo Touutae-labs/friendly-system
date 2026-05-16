@@ -28,7 +28,7 @@ func setup(t *testing.T) (*processor.Service, *gorm.DB) {
 	// :memory: with shared cache so concurrent connections see the same DB.
 	// We keep one *gorm.DB alive for the test's lifetime, which keeps the
 	// shared in-memory DB alive until the test ends.
-	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{
+	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared&_busy_timeout=5000"), &gorm.Config{
 		Logger: gormlogger.Default.LogMode(gormlogger.Silent),
 	})
 	if err != nil {
@@ -51,11 +51,14 @@ func setup(t *testing.T) (*processor.Service, *gorm.DB) {
 
 	ov, _ := orderval.New(orderval.DefaultConfig())
 	q, _ := quote.New(quote.DefaultConfig(), quote.NewMemory(dec("42000")))
-	b, _ := balance.New(repositories.NewAccount(db))
-	led, _ := limit.New(limit.DefaultConfig(), repositories.NewLedger(db))
+	accRepo := repositories.NewAccount(db)
+	ledRepo := repositories.NewLedger(db)
+	ordRepo := repositories.NewOrder(db)
+	b, _ := balance.New(accRepo)
+	led, _ := limit.New(limit.DefaultConfig(), ledRepo)
 	svc := validatorsvc.New(ov, q, b, led)
 
-	proc := processor.New(db, svc, limit.DefaultConfig())
+	proc := processor.New(db, svc, b, led, ordRepo, limit.DefaultConfig())
 	return proc, db
 }
 
@@ -212,29 +215,35 @@ func TestProcessor_ConcurrentBuysDoNotExceedLimit(t *testing.T) {
 
 	const N = 50
 	var wg sync.WaitGroup
-	results := make(chan processor.Status, N)
+	results := make(chan processor.Result, N)
 	for i := 0; i < N; i++ {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
 			r := proc.Process(context.Background(), fmt.Sprintf("concurrent-%d", idx), o)
-			results <- r.Status
+			results <- r
 		}(i)
 	}
 	wg.Wait()
 	close(results)
 
-	var filled, rejected int
-	for s := range results {
-		switch s {
+	var filled, rejected, errored int
+	var lastError string
+	for i := 0; i < N; i++ {
+		r := <-results
+		switch r.Status {
 		case processor.StatusFilled:
 			filled++
 		case processor.StatusRejected:
 			rejected++
+		case processor.StatusError:
+			errored++
+			lastError = r.Reason
 		}
 	}
+
 	if filled != 2 {
-		t.Errorf("expected exactly 2 fills (headroom = 1, qty = 0.5), got %d filled / %d rejected", filled, rejected)
+		t.Errorf("expected exactly 2 fills (headroom = 1, qty = 0.5), got %d filled / %d rejected / %d errored. Last error: %s", filled, rejected, errored, lastError)
 	}
 
 	var dt repositories.DailyTotalModel
