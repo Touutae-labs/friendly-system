@@ -171,7 +171,7 @@ func handleProcess(proc *processor.Service, logger *slog.Logger) http.HandlerFun
 			return
 		}
 
-		result := proc.Process(key, o)
+		result := proc.Process(r.Context(), key, o)
 
 		logger.Info("process",
 			"customer_id", o.CustomerID,

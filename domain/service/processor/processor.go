@@ -1,6 +1,7 @@
 package processor
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"time"
@@ -53,148 +54,73 @@ func New(db *gorm.DB, validator *validatorsvc.Service, limitCfg limit.Config) *S
 	}
 }
 
-func (s *Service) Process(idempotencyKey string, o order.Order) Result {
-	res := Result{IdempotencyKey: idempotencyKey}
+type rejection struct{ result Result }
 
+func (r *rejection) Error() string { return "rejected: " + r.result.Reason }
+
+func (s *Service) Process(ctx context.Context, idempotencyKey string, o order.Order) Result {
 	if idempotencyKey == "" {
-		res.Status = StatusError
-		res.Reason = "idempotency_key is required"
-		return res
+		return Result{Status: StatusError, Reason: "idempotency_key is required"}
 	}
-
-	if prior, ok, err := s.lookupPrior(idempotencyKey); err != nil {
-		res.Status = StatusError
-		res.Reason = "idempotency lookup failed"
-		return res
-	} else if ok {
-		prior.Status = StatusDuplicate
-		return prior
+	if pre := s.validator.Validate(o); !pre.Valid {
+		return Result{Status: StatusRejected, IdempotencyKey: idempotencyKey, ValidationErrors: pre.Errors}
 	}
+	return s.execute(ctx, idempotencyKey, o)
+}
 
-	preflight := s.validator.Validate(o)
-	if !preflight.Valid {
-		res.Status = StatusRejected
-		res.ValidationErrors = preflight.Errors
-		return res
-	}
+func (s *Service) execute(ctx context.Context, key string, o order.Order) Result {
+	var out Result
 
-	cost := o.Quantity.Mul(o.QuotedPrice)
-
-	txErr := s.db.Transaction(func(tx *gorm.DB) error {
-		var acct repositories.AccountModel
-		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("customer_id = ?", o.CustomerID).
-			First(&acct).Error
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			res.Status = StatusRejected
-			res.Reason = "customer not found"
-			res.ValidationErrors = []order.Error{{Code: balance.CodeCustomerNotFound, Field: "customer_id", Message: "customer not found"}}
-			return errStopTx
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if prior, dup, err := s.findPriorOrder(tx, key); err != nil {
+			return fmt.Errorf("idempotency lookup: %w", err)
+		} else if dup {
+			out = prior
+			return nil
 		}
+
+		newBalance, err := s.applyBalance(tx, o)
 		if err != nil {
-			return fmt.Errorf("lock account: %w", err)
+			return err
 		}
 
-		bal := acct.Balance
-
-		var newBalance decimal.Decimal
-		switch o.OrderType {
-		case order.Buy:
-			if bal.LessThan(cost) {
-				res.Status = StatusRejected
-				res.Reason = "insufficient balance"
-				res.ValidationErrors = []order.Error{{Code: balance.CodeInsufficientBalance, Message: fmt.Sprintf("balance %s THB is less than required %s THB", bal.StringFixed(2), cost.StringFixed(2))}}
-				return errStopTx
-			}
-			newBalance = bal.Sub(cost)
-		case order.Sell:
-			newBalance = bal.Add(cost)
-		default:
-			return fmt.Errorf("unexpected order_type %q after validation", o.OrderType)
-		}
-
-		if err := tx.Model(&repositories.AccountModel{}).
-			Where("customer_id = ?", o.CustomerID).
-			Update("balance", newBalance).Error; err != nil {
-			return fmt.Errorf("update balance: %w", err)
+		remaining, err := s.applyDailyLimit(tx, o)
+		if err != nil {
+			return err
 		}
 
 		orderID := s.newID()
-		now := s.now()
-		auditRow := repositories.OrderModel{
-			ID:             orderID,
-			CustomerID:     o.CustomerID,
-			OrderType:      string(o.OrderType),
-			Quantity:       o.Quantity,
-			QuotedPrice:    o.QuotedPrice,
-			Total:          cost,
-			NewBalance:     newBalance,
-			IdempotencyKey: idempotencyKey,
-			CreatedAt:      now.UTC(),
-		}
-		if err := tx.Create(&auditRow).Error; err != nil {
-			return fmt.Errorf("insert order: %w", err)
+		if err := s.writeAuditRow(tx, orderID, key, o, newBalance); err != nil {
+			return fmt.Errorf("write audit: %w", err)
 		}
 
-		dayKey := now.UTC().Format("2006-01-02")
-		var dt repositories.DailyTotalModel
-		err = tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("customer_id = ? AND day = ?", o.CustomerID, dayKey).
-			First(&dt).Error
-		current := decimal.Zero
-		if err == nil {
-			current = dt.Total
-		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-			return fmt.Errorf("read daily total: %w", err)
+		out = Result{
+			Status:         StatusFilled,
+			OrderID:        orderID,
+			IdempotencyKey: key,
+			NewBalance:     &newBalance,
+			DailyRemaining: &remaining,
 		}
-		nextTotal := current.Add(o.Quantity)
-		if nextTotal.GreaterThan(s.dailyLimit) {
-			remainingBefore := s.dailyLimit.Sub(current)
-			if remainingBefore.IsNegative() {
-				remainingBefore = decimal.Zero
-			}
-			res.Status = StatusRejected
-			res.Reason = "daily limit exceeded"
-			res.DailyRemaining = &remainingBefore
-			res.ValidationErrors = []order.Error{{
-				Code:    limit.CodeDailyLimitExceeded,
-				Field:   "quantity",
-				Message: fmt.Sprintf("order quantity %s exceeds remaining daily allowance %s baht-weight", o.Quantity.String(), remainingBefore.String()),
-			}}
-			return errStopTx
-		}
-		if err := tx.Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "customer_id"}, {Name: "day"}},
-			DoUpdates: clause.AssignmentColumns([]string{"total"}),
-		}).Create(&repositories.DailyTotalModel{
-			CustomerID: o.CustomerID,
-			Day:        dayKey,
-			Total:      nextTotal,
-		}).Error; err != nil {
-			return fmt.Errorf("upsert daily total: %w", err)
-		}
-
-		res.Status = StatusFilled
-		res.OrderID = orderID
-		res.NewBalance = &newBalance
-		remaining := s.dailyLimit.Sub(nextTotal)
-		if remaining.IsNegative() {
-			remaining = decimal.Zero
-		}
-		res.DailyRemaining = &remaining
 		return nil
 	})
 
-	if txErr != nil && !errors.Is(txErr, errStopTx) {
-		res.Status = StatusError
-		res.Reason = "persistence error"
+	if err != nil {
+		var rej *rejection
+		if errors.As(err, &rej) {
+			rej.result.IdempotencyKey = key
+			return rej.result
+		}
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return Result{Status: StatusError, IdempotencyKey: key, Reason: "request canceled"}
+		}
+		return Result{Status: StatusError, IdempotencyKey: key, Reason: "persistence error"}
 	}
-	return res
+	return out
 }
 
-func (s *Service) lookupPrior(key string) (Result, bool, error) {
+func (s *Service) findPriorOrder(tx *gorm.DB, key string) (Result, bool, error) {
 	var row repositories.OrderModel
-	err := s.db.Where("idempotency_key = ?", key).First(&row).Error
+	err := tx.Where("idempotency_key = ?", key).First(&row).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return Result{}, false, nil
 	}
@@ -203,11 +129,115 @@ func (s *Service) lookupPrior(key string) (Result, bool, error) {
 	}
 	bal := row.NewBalance
 	return Result{
-		Status:         StatusFilled,
+		Status:         StatusDuplicate,
 		OrderID:        row.ID,
 		IdempotencyKey: row.IdempotencyKey,
 		NewBalance:     &bal,
 	}, true, nil
 }
 
-var errStopTx = errors.New("stop tx")
+func (s *Service) applyBalance(tx *gorm.DB, o order.Order) (decimal.Decimal, error) {
+	var acct repositories.AccountModel
+	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("customer_id = ?", o.CustomerID).
+		First(&acct).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return decimal.Zero, &rejection{result: Result{
+			Status: StatusRejected,
+			Reason: "customer not found",
+			ValidationErrors: []order.Error{{
+				Code:    balance.CodeCustomerNotFound,
+				Field:   "customer_id",
+				Message: "customer not found",
+			}},
+		}}
+	}
+	if err != nil {
+		return decimal.Zero, fmt.Errorf("lock account: %w", err)
+	}
+
+	cost := o.Quantity.Mul(o.QuotedPrice)
+	var newBalance decimal.Decimal
+	switch o.OrderType {
+	case order.Buy:
+		if acct.Balance.LessThan(cost) {
+			return decimal.Zero, &rejection{result: Result{
+				Status: StatusRejected,
+				Reason: "insufficient balance",
+				ValidationErrors: []order.Error{{
+					Code: balance.CodeInsufficientBalance,
+					Message: fmt.Sprintf("balance %s THB is less than required %s THB",
+						acct.Balance.StringFixed(2), cost.StringFixed(2)),
+				}},
+			}}
+		}
+		newBalance = acct.Balance.Sub(cost)
+	case order.Sell:
+		newBalance = acct.Balance.Add(cost)
+	default:
+		return decimal.Zero, fmt.Errorf("unexpected order_type %q after validation", o.OrderType)
+	}
+
+	if err := tx.Model(&repositories.AccountModel{}).
+		Where("customer_id = ?", o.CustomerID).
+		Update("balance", newBalance).Error; err != nil {
+		return decimal.Zero, fmt.Errorf("update balance: %w", err)
+	}
+	return newBalance, nil
+}
+
+func (s *Service) applyDailyLimit(tx *gorm.DB, o order.Order) (decimal.Decimal, error) {
+	dayKey := s.now().UTC().Format(time.DateOnly)
+	var dt repositories.DailyTotalModel
+	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("customer_id = ? AND day = ?", o.CustomerID, dayKey).
+		First(&dt).Error
+	current := decimal.Zero
+	if err == nil {
+		current = dt.Total
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return decimal.Zero, fmt.Errorf("read daily total: %w", err)
+	}
+
+	next := current.Add(o.Quantity)
+	if next.GreaterThan(s.dailyLimit) {
+		remainingBefore := decimal.Max(s.dailyLimit.Sub(current), decimal.Zero)
+		return decimal.Zero, &rejection{result: Result{
+			Status:         StatusRejected,
+			Reason:         "daily limit exceeded",
+			DailyRemaining: &remainingBefore,
+			ValidationErrors: []order.Error{{
+				Code:  limit.CodeDailyLimitExceeded,
+				Field: "quantity",
+				Message: fmt.Sprintf("order quantity %s exceeds remaining daily allowance %s baht-weight",
+					o.Quantity.String(), remainingBefore.String()),
+			}},
+		}}
+	}
+
+	if err := tx.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "customer_id"}, {Name: "day"}},
+		DoUpdates: clause.AssignmentColumns([]string{"total"}),
+	}).Create(&repositories.DailyTotalModel{
+		CustomerID: o.CustomerID,
+		Day:        dayKey,
+		Total:      next,
+	}).Error; err != nil {
+		return decimal.Zero, fmt.Errorf("upsert daily total: %w", err)
+	}
+	return decimal.Max(s.dailyLimit.Sub(next), decimal.Zero), nil
+}
+
+func (s *Service) writeAuditRow(tx *gorm.DB, id, key string, o order.Order, newBalance decimal.Decimal) error {
+	return tx.Create(&repositories.OrderModel{
+		ID:             id,
+		CustomerID:     o.CustomerID,
+		OrderType:      string(o.OrderType),
+		Quantity:       o.Quantity,
+		QuotedPrice:    o.QuotedPrice,
+		Total:          o.Quantity.Mul(o.QuotedPrice),
+		NewBalance:     newBalance,
+		IdempotencyKey: key,
+		CreatedAt:      s.now().UTC(),
+	}).Error
+}

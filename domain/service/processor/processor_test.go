@@ -1,6 +1,7 @@
 package processor_test
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"testing"
@@ -62,7 +63,7 @@ func TestProcessor_FilledBuy(t *testing.T) {
 	proc, db := setup(t)
 	expBuy := dec("42000").Mul(decimal.NewFromInt(1).Add(quote.DefaultConfig().SpreadMargin))
 
-	r := proc.Process("idem-001", order.Order{
+	r := proc.Process(context.Background(), "idem-001", order.Order{
 		CustomerID: "C001", OrderType: order.Buy, Quantity: dec("0.5"), QuotedPrice: expBuy,
 	})
 
@@ -97,7 +98,7 @@ func TestProcessor_RejectsInsufficientBalance(t *testing.T) {
 	proc, db := setup(t)
 	expBuy := dec("42000").Mul(decimal.NewFromInt(1).Add(quote.DefaultConfig().SpreadMargin))
 
-	r := proc.Process("idem-002", order.Order{
+	r := proc.Process(context.Background(), "idem-002", order.Order{
 		CustomerID: "C002", OrderType: order.Buy, Quantity: dec("1"), QuotedPrice: expBuy,
 	})
 
@@ -117,7 +118,7 @@ func TestProcessor_RejectsCustomerNotFound(t *testing.T) {
 	proc, _ := setup(t)
 	expBuy := dec("42000").Mul(decimal.NewFromInt(1).Add(quote.DefaultConfig().SpreadMargin))
 
-	r := proc.Process("idem-003", order.Order{
+	r := proc.Process(context.Background(), "idem-003", order.Order{
 		CustomerID: "GHOST", OrderType: order.Buy, Quantity: dec("1"), QuotedPrice: expBuy,
 	})
 
@@ -140,11 +141,11 @@ func TestProcessor_Idempotent(t *testing.T) {
 	expBuy := dec("42000").Mul(decimal.NewFromInt(1).Add(quote.DefaultConfig().SpreadMargin))
 	o := order.Order{CustomerID: "C001", OrderType: order.Buy, Quantity: dec("0.5"), QuotedPrice: expBuy}
 
-	first := proc.Process("idem-dup", o)
+	first := proc.Process(context.Background(), "idem-dup", o)
 	if first.Status != processor.StatusFilled {
 		t.Fatalf("first status=%s", first.Status)
 	}
-	second := proc.Process("idem-dup", o)
+	second := proc.Process(context.Background(), "idem-dup", o)
 	if second.Status != processor.StatusDuplicate {
 		t.Fatalf("second status=%s, want duplicate", second.Status)
 	}
@@ -169,7 +170,7 @@ func TestProcessor_Idempotent(t *testing.T) {
 
 func TestProcessor_RejectsMissingIdempotencyKey(t *testing.T) {
 	proc, _ := setup(t)
-	r := proc.Process("", order.Order{CustomerID: "C001", OrderType: order.Buy, Quantity: dec("0.5"), QuotedPrice: dec("42210")})
+	r := proc.Process(context.Background(), "", order.Order{CustomerID: "C001", OrderType: order.Buy, Quantity: dec("0.5"), QuotedPrice: dec("42210")})
 	if r.Status != processor.StatusError {
 		t.Errorf("status=%s, want error", r.Status)
 	}
@@ -177,7 +178,7 @@ func TestProcessor_RejectsMissingIdempotencyKey(t *testing.T) {
 
 func TestProcessor_FilledSellCreditsBalance(t *testing.T) {
 	proc, db := setup(t)
-	r := proc.Process("idem-sell", order.Order{
+	r := proc.Process(context.Background(), "idem-sell", order.Order{
 		CustomerID: "C001", OrderType: order.Sell, Quantity: dec("0.5"), QuotedPrice: dec("42000"),
 	})
 	if r.Status != processor.StatusFilled {
@@ -216,7 +217,7 @@ func TestProcessor_ConcurrentBuysDoNotExceedLimit(t *testing.T) {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
-			r := proc.Process(fmt.Sprintf("concurrent-%d", idx), o)
+			r := proc.Process(context.Background(), fmt.Sprintf("concurrent-%d", idx), o)
 			results <- r.Status
 		}(i)
 	}
@@ -251,7 +252,7 @@ func TestProcessor_DailyTotalIncrements(t *testing.T) {
 	expBuy := dec("42000").Mul(decimal.NewFromInt(1).Add(quote.DefaultConfig().SpreadMargin))
 
 	for i, key := range []string{"a", "b"} {
-		r := proc.Process(key, order.Order{
+		r := proc.Process(context.Background(), key, order.Order{
 			CustomerID: "C001", OrderType: order.Buy, Quantity: dec("0.5"), QuotedPrice: expBuy,
 		})
 		if r.Status != processor.StatusFilled {
