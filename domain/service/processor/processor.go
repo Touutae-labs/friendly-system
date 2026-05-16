@@ -75,6 +75,9 @@ func (s *Service) Process(ctx context.Context, idempotencyKey string, o order.Or
 	if idempotencyKey == "" {
 		return Result{Status: StatusError, Reason: "idempotency_key is required"}
 	}
+	if err := ctx.Err(); err != nil {
+		return Result{Status: StatusError, IdempotencyKey: idempotencyKey, Reason: "request canceled"}
+	}
 	if pre := s.validator.Validate(ctx, o); !pre.Valid {
 		return Result{Status: StatusRejected, IdempotencyKey: idempotencyKey, ValidationErrors: pre.Errors}
 	}

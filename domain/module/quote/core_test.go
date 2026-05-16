@@ -1,8 +1,10 @@
 package quote
 
 import (
+	"context"
 	"testing"
 
+	"github.com/Touutae-labs/friendly-system/domain/common/order"
 	"github.com/shopspring/decimal"
 )
 
@@ -44,4 +46,58 @@ func TestConfigValidate_RejectsBadValues(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestValidator_Apply(t *testing.T) {
+	mkt := NewMemory(d("100"))
+	v, _ := New(DefaultConfig(), mkt)
+	ctx := context.Background()
+
+	t.Run("valid buy within tolerance", func(t *testing.T) {
+		res := &order.Result{Valid: true}
+		// expected buy price = 100 * (1 + 0.005) = 100.5
+		o := order.Order{OrderType: order.Buy, QuotedPrice: d("100.5")}
+		ok := v.Apply(ctx, o, res)
+		if !ok || !res.Valid {
+			t.Errorf("expected valid, got %+v", res.Errors)
+		}
+	})
+
+	t.Run("stale or off price buy", func(t *testing.T) {
+		res := &order.Result{Valid: true}
+		o := order.Order{OrderType: order.Buy, QuotedPrice: d("110")}
+		v.Apply(ctx, o, res)
+		if res.Valid || !res.HasError(CodeStaleOrOffPrice) {
+			t.Errorf("expected error %s, got %+v", CodeStaleOrOffPrice, res.Errors)
+		}
+	})
+
+	t.Run("valid sell within tolerance", func(t *testing.T) {
+		res := &order.Result{Valid: true}
+		o := order.Order{OrderType: order.Sell, QuotedPrice: d("99")} // tolerance is 2%
+		v.Apply(ctx, o, res)
+		if !res.Valid {
+			t.Errorf("expected valid, got %+v", res.Errors)
+		}
+	})
+
+	t.Run("stale price sell", func(t *testing.T) {
+		res := &order.Result{Valid: true}
+		o := order.Order{OrderType: order.Sell, QuotedPrice: d("95")}
+		v.Apply(ctx, o, res)
+		if res.Valid || !res.HasError(CodeStalePrice) {
+			t.Errorf("expected error %s, got %+v", CodeStalePrice, res.Errors)
+		}
+	})
+
+	t.Run("market unavailable", func(t *testing.T) {
+		mkt2 := NewMemory(d("0"))
+		v2, _ := New(DefaultConfig(), mkt2)
+		res := &order.Result{Valid: true}
+		o := order.Order{OrderType: order.Buy, QuotedPrice: d("100")}
+		ok := v2.Apply(ctx, o, res)
+		if ok || res.Valid || !res.HasError(CodeMarketUnavailable) {
+			t.Errorf("expected error %s, got %+v", CodeMarketUnavailable, res.Errors)
+		}
+	})
 }
