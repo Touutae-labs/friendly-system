@@ -95,10 +95,7 @@ func (s *Service) Process(idempotencyKey string, o order.Order) Result {
 			return fmt.Errorf("lock account: %w", err)
 		}
 
-		bal, err := decimal.NewFromString(acct.Balance)
-		if err != nil {
-			return fmt.Errorf("parse balance: %w", err)
-		}
+		bal := acct.Balance
 
 		var newBalance decimal.Decimal
 		switch o.OrderType {
@@ -118,7 +115,7 @@ func (s *Service) Process(idempotencyKey string, o order.Order) Result {
 
 		if err := tx.Model(&repositories.AccountModel{}).
 			Where("customer_id = ?", o.CustomerID).
-			Update("balance", newBalance.String()).Error; err != nil {
+			Update("balance", newBalance).Error; err != nil {
 			return fmt.Errorf("update balance: %w", err)
 		}
 
@@ -128,12 +125,12 @@ func (s *Service) Process(idempotencyKey string, o order.Order) Result {
 			ID:             orderID,
 			CustomerID:     o.CustomerID,
 			OrderType:      string(o.OrderType),
-			Quantity:       o.Quantity.String(),
-			QuotedPrice:    o.QuotedPrice.String(),
-			Total:          cost.String(),
-			NewBalance:     newBalance.String(),
+			Quantity:       o.Quantity,
+			QuotedPrice:    o.QuotedPrice,
+			Total:          cost,
+			NewBalance:     newBalance,
 			IdempotencyKey: idempotencyKey,
-			CreatedAt:      now.UTC().Format(time.RFC3339Nano),
+			CreatedAt:      now.UTC(),
 		}
 		if err := tx.Create(&auditRow).Error; err != nil {
 			return fmt.Errorf("insert order: %w", err)
@@ -146,11 +143,7 @@ func (s *Service) Process(idempotencyKey string, o order.Order) Result {
 			First(&dt).Error
 		current := decimal.Zero
 		if err == nil {
-			parsed, perr := decimal.NewFromString(dt.Total)
-			if perr != nil {
-				return fmt.Errorf("parse daily total: %w", perr)
-			}
-			current = parsed
+			current = dt.Total
 		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return fmt.Errorf("read daily total: %w", err)
 		}
@@ -176,7 +169,7 @@ func (s *Service) Process(idempotencyKey string, o order.Order) Result {
 		}).Create(&repositories.DailyTotalModel{
 			CustomerID: o.CustomerID,
 			Day:        dayKey,
-			Total:      nextTotal.String(),
+			Total:      nextTotal,
 		}).Error; err != nil {
 			return fmt.Errorf("upsert daily total: %w", err)
 		}
@@ -208,7 +201,7 @@ func (s *Service) lookupPrior(key string) (Result, bool, error) {
 	if err != nil {
 		return Result{}, false, err
 	}
-	bal, _ := decimal.NewFromString(row.NewBalance)
+	bal := row.NewBalance
 	return Result{
 		Status:         StatusFilled,
 		OrderID:        row.ID,

@@ -4,9 +4,9 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/glebarez/sqlite"
 	"github.com/Touutae-labs/friendly-system/domain/module/balance"
 	"github.com/Touutae-labs/friendly-system/domain/repositories"
+	"github.com/glebarez/sqlite"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
@@ -28,7 +28,10 @@ func newDB(t *testing.T) *gorm.DB {
 
 func TestAccount_Balance_HappyPath(t *testing.T) {
 	db := newDB(t)
-	if err := db.Create(&repositories.AccountModel{CustomerID: "C001", Balance: "1000000.50"}).Error; err != nil {
+	if err := db.Create(&repositories.AccountModel{
+		CustomerID: "C001",
+		Balance:    decimal.RequireFromString("1000000.50"),
+	}).Error; err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 	repo := repositories.NewAccount(db)
@@ -47,20 +50,5 @@ func TestAccount_Balance_NotFound(t *testing.T) {
 	_, err := repo.Balance("GHOST")
 	if !errors.Is(err, balance.ErrCustomerNotFound) {
 		t.Errorf("expected ErrCustomerNotFound, got %v", err)
-	}
-}
-
-func TestAccount_Balance_MalformedData(t *testing.T) {
-	db := newDB(t)
-	if err := db.Create(&repositories.AccountModel{CustomerID: "C001", Balance: "not-a-number"}).Error; err != nil {
-		t.Fatalf("seed: %v", err)
-	}
-	repo := repositories.NewAccount(db)
-	_, err := repo.Balance("C001")
-	if err == nil {
-		t.Error("expected parse error, got nil")
-	}
-	if errors.Is(err, balance.ErrCustomerNotFound) {
-		t.Errorf("malformed data should not surface as ErrCustomerNotFound, got %v", err)
 	}
 }

@@ -28,9 +28,5 @@ func (a *Account) Balance(customerID string) (decimal.Decimal, error) {
 	if err != nil {
 		return decimal.Zero, fmt.Errorf("repositories.Account: query: %w", err)
 	}
-	bal, err := decimal.NewFromString(row.Balance)
-	if err != nil {
-		return decimal.Zero, fmt.Errorf("repositories.Account: parse %q: %w", row.Balance, err)
-	}
-	return bal, nil
+	return row.Balance, nil
 }

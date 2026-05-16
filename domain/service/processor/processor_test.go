@@ -42,8 +42,8 @@ func setup(t *testing.T) (*processor.Service, *gorm.DB) {
 		t.Fatalf("migrate: %v", err)
 	}
 	if err := db.Create(&[]repositories.AccountModel{
-		{CustomerID: "C001", Balance: "1000000"},
-		{CustomerID: "C002", Balance: "500"},
+		{CustomerID: "C001", Balance: dec("1000000")},
+		{CustomerID: "C002", Balance: dec("500")},
 	}).Error; err != nil {
 		t.Fatalf("seed: %v", err)
 	}
@@ -81,7 +81,7 @@ func TestProcessor_FilledBuy(t *testing.T) {
 		t.Fatalf("account lookup: %v", err)
 	}
 	want := dec("1000000").Sub(dec("0.5").Mul(expBuy))
-	got, _ := decimal.NewFromString(acct.Balance)
+	got := acct.Balance
 	if !got.Equal(want) {
 		t.Errorf("balance after debit got %s, want %s", got, want)
 	}
@@ -107,7 +107,7 @@ func TestProcessor_RejectsInsufficientBalance(t *testing.T) {
 
 	var acct repositories.AccountModel
 	db.Where("customer_id = ?", "C002").First(&acct)
-	got, _ := decimal.NewFromString(acct.Balance)
+	got := acct.Balance
 	if !got.Equal(dec("500")) {
 		t.Errorf("balance must not change on rejection, got %s, want 500", got)
 	}
@@ -160,7 +160,7 @@ func TestProcessor_Idempotent(t *testing.T) {
 
 	var acct repositories.AccountModel
 	db.Where("customer_id = ?", "C001").First(&acct)
-	got, _ := decimal.NewFromString(acct.Balance)
+	got := acct.Balance
 	want := dec("1000000").Sub(dec("0.5").Mul(expBuy))
 	if !got.Equal(want) {
 		t.Errorf("balance must only debit ONCE, got %s, want %s", got, want)
@@ -186,7 +186,7 @@ func TestProcessor_FilledSellCreditsBalance(t *testing.T) {
 
 	var acct repositories.AccountModel
 	db.Where("customer_id = ?", "C001").First(&acct)
-	got, _ := decimal.NewFromString(acct.Balance)
+	got := acct.Balance
 	want := dec("1000000").Add(dec("0.5").Mul(dec("42000")))
 	if !got.Equal(want) {
 		t.Errorf("sell must credit balance, got %s, want %s", got, want)
@@ -203,7 +203,7 @@ func TestProcessor_ConcurrentBuysDoNotExceedLimit(t *testing.T) {
 	// pre-load C001's daily total so headroom is 1 baht-weight (4 of 5 used);
 	// each buy is 0.5 → only 2 should succeed.
 	today := time.Now().UTC().Format("2006-01-02")
-	if err := db.Create(&repositories.DailyTotalModel{CustomerID: "C001", Day: today, Total: "4"}).Error; err != nil {
+	if err := db.Create(&repositories.DailyTotalModel{CustomerID: "C001", Day: today, Total: dec("4")}).Error; err != nil {
 		t.Fatalf("seed daily: %v", err)
 	}
 	expBuy := dec("42000").Mul(decimal.NewFromInt(1).Add(quote.DefaultConfig().SpreadMargin))
@@ -240,7 +240,7 @@ func TestProcessor_ConcurrentBuysDoNotExceedLimit(t *testing.T) {
 	if err := db.Where("customer_id = ? AND day = ?", "C001", today).First(&dt).Error; err != nil {
 		t.Fatalf("read daily total: %v", err)
 	}
-	total, _ := decimal.NewFromString(dt.Total)
+	total := dt.Total
 	if total.GreaterThan(dec("5")) {
 		t.Errorf("daily_total %s exceeds limit 5 — TOCTOU bug regressed", total)
 	}
@@ -264,7 +264,7 @@ func TestProcessor_DailyTotalIncrements(t *testing.T) {
 	if err := db.Where("customer_id = ? AND day = ?", "C001", day).First(&dt).Error; err != nil {
 		t.Fatalf("daily total: %v", err)
 	}
-	total, _ := decimal.NewFromString(dt.Total)
+	total := dt.Total
 	if !total.Equal(dec("1")) {
 		t.Errorf("expected daily total 1, got %s", total)
 	}

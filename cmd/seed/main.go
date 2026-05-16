@@ -6,8 +6,9 @@ import (
 	"log"
 	"time"
 
-	"github.com/glebarez/sqlite"
 	"github.com/Touutae-labs/friendly-system/domain/repositories"
+	"github.com/glebarez/sqlite"
+	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -22,9 +23,9 @@ func main() {
 	}
 
 	accounts := []repositories.AccountModel{
-		{CustomerID: "C001", Balance: "1000000"},
-		{CustomerID: "C002", Balance: "500"},
-		{CustomerID: "C003", Balance: "5000000"},
+		{CustomerID: "C001", Balance: decimal.RequireFromString("1000000")},
+		{CustomerID: "C002", Balance: decimal.RequireFromString("500")},
+		{CustomerID: "C003", Balance: decimal.RequireFromString("5000000")},
 	}
 	if err := db.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "customer_id"}},
@@ -34,7 +35,11 @@ func main() {
 	}
 
 	today := time.Now().UTC().Format("2006-01-02")
-	dailyTotal := repositories.DailyTotalModel{CustomerID: "C001", Day: today, Total: "4"}
+	dailyTotal := repositories.DailyTotalModel{
+		CustomerID: "C001",
+		Day:        today,
+		Total:      decimal.RequireFromString("4"),
+	}
 	if err := db.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "customer_id"}, {Name: "day"}},
 		DoUpdates: clause.AssignmentColumns([]string{"total"}),
