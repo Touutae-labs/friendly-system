@@ -1,7 +1,7 @@
 # Part 5 — รีวิว Pull Request `batch_processor.py` (ฉบับภาษาไทย)
 
 **ผู้ส่ง:** Pantakan Totae · `pantakan.totae@gmail.com`
-**วันที่:** 2026-05-15
+**วันที่:** 2026-05-16
 **Repo:** ดู `README.md` สำหรับ layout และวิธีรัน
 **English version:** [`Part_5_EN.md`](Part_5_EN.md)
 
@@ -11,7 +11,7 @@
 
 ## Summary
 
-เป็น MR ที่ดีครับ มีการแยก batch orchestration กับ per-order processing, return result แบบมี structure, มี summary helper — เป็น shape ที่ดีหมด **แต่ผมจะไม่ merge ตอนนี้** เพราะหลายปัญหาที่ Part 1 พยายามแก้ ก็ยังอยู่ใน PR นี้ (TOCTOU บน balance, floating precision / floating arimetric, sell ไม่มี inventory check) บวกกับปัญหาใหม่ที่เฉพาะ batch / concurrency model
+เป็น MR ที่ Service นี้ควรจะเป็นสำหรับผม เพระว่าถ้าในอนาคตเราปรับเป็น Event-Driven แบบ Kafka โค๊ด structure นี้คือตรงเลยมีการแยก batch orchestration กับ per-order processing, return result แบบมี structure, มี summary helper แต่ว่ามันยังไม่แก้ปัญหาที่เราเจอในโค๊ดทีแรก
 
 ก่อน merge ต้องการให้แก้ทุกข้อใน **block** ด้านล่าง — ส่วน **nit** ผม comment inline แล้วให้ merge หลังจาก block ผ่านได้
 
@@ -26,7 +26,7 @@
 
 ## Block (ต้องแก้ก่อน merge)
 
-### B1. TOCTOU race บน balance — lock อยู่ผิดที่
+### B1. TOCTOU (Time of Check, Time of Use Problem) race บน balance — lock อยู่ผิดที่
 
 ```python
 balance = customer_balances[customer_id]   # อ่าน OUTSIDE lock
@@ -122,3 +122,7 @@ elif order_type == "sell":
 3. C / N ที่เหลือ ทำ follow-up PR ได้
 
 ยินดี pair ใน per-customer-lock refactor (B1) — เป็นข้อที่เสี่ยง introduce บั๊กใหม่ถ้ารีบ
+
+ทำไมผมถึงใช้ AI ช่วยขยายความ ? 
+
+คำตอบง่ายมากครับ AI ช่วยขยายในส่วนที่ควรขยาย ผมว่าผมคงไม่เขียนละเอียดเท่า แต่ sumamry ค่อนข้างตรง

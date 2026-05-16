@@ -8,24 +8,28 @@
 domain/                                ← root ของ domain layer ทั้งหมด
   common/order/order.go                ← shared kernel: Order, Result, Error, OrderType
   module/                              ← per business sub-domain; self-contained
-    orderval/core.go                   ← rule (no I/O, no port)
+    orderval/core.go                   ← schema rule (no I/O, no port)
     quote/
-      core.go                          ← rule
-      provider.go                      ← MarketPriceProvider port (Provider pattern)
-      memory.go                        ← in-memory adapter (quote.Memory)
+      core.go                          ← price logic & tolerance checks
+      provider.go                      ← MarketPriceProvider port
+      dynamic.go                       ← background service simulation (DynamicPriceProvider)
+      memory.go                        ← in-memory adapter
     balance/
-      core.go                          ← rule
-      repository.go                    ← AccountRepository port (Repository pattern)
-      memory.go                        ← in-memory adapter (balance.Memory)
+      core.go                          ← authoritative balance rules (Debit/Credit)
+      repository.go                    ← AccountRepository port (transactional)
+      memory.go                        ← in-memory adapter
     limit/
-      core.go                          ← rule
-      repository.go                    ← DailyLedger port
-      memory.go                        ← in-memory adapter (limit.Memory)
+      core.go                          ← authoritative quota rules
+      repository.go                    ← DailyLedger port (transactional)
+      memory.go                        ← in-memory adapter
   repositories/                        ← GORM implementations ของ repository ports
-    models.go                          ← AccountModel, DailyTotalModel (GORM tags)
-    account.go                         ← repositories.Account → balance.AccountRepository
-    ledger.go                          ← repositories.Ledger  → limit.DailyLedger
-  service/validator/service.go         ← orchestrator (plain Go, no Wire)
+    models.go                          ← AccountModel, DailyTotalModel, OrderModel
+    account.go                         ← balance.AccountRepository impl
+    ledger.go                          ← limit.DailyLedger impl
+    order.go                           ← orderval.OrderRepository impl (idempotency/audit)
+  service/
+    validator/service.go               ← pre-validation orchestrator (read-only)
+    processor/processor.go               ← transactional orchestrator (authoritative execution)
   mocks/                               ← Mockery output, generated
 wire/                                  ← Google Wire composition root (infrastructure)
   wire.go, providers.go, gorm.go, wire_gen.go
@@ -48,13 +52,13 @@ cmd/
 
 | ไฟล์ | บทบาท |
 |---|---|
-| `core.go` | business rule + Validator struct + Config + error codes |
-| `repository.go` / `provider.go` | port interface ที่ rule นี้ต้องการ (Repository pattern สำหรับ persisted state, Provider pattern สำหรับ read-only gateway) |
-| `memory.go` | in-memory adapter ของ port — ใช้ test, demo, dev |
+| `core.go` | business rule + Validator/Module struct + Config + error codes (รวมทั้ง **Validate** สำหรับ pre-check และ **Apply** สำหรับ transactional logic) |
+| `repository.go` / `provider.go` | port interface ที่ rule นี้ต้องการ (เพิ่ม `LockAndGet...` สำหรับ transactional ports) |
+| `memory.go` / `dynamic.go` | adapters ของ port — memory สำหรับ test/dev และ dynamic สำหรับ service simulation |
 
 **ตัวอย่าง `domain/module/balance/`:**
-- `core.go`: `Validator` (rule logic), `Code*` (error codes)
-- `repository.go`: `AccountRepository` (port) + `ErrCustomerNotFound`
+- `core.go`: `Module` (rule logic), `Code*` (error codes)
+- `repository.go`: `AccountRepository` (port) + transactional methods
 - `memory.go`: `balance.Memory` struct ที่ implement `AccountRepository` แบบ thread-safe in-memory map
 
 **กฎสำคัญ — ports อยู่ที่ module:**
@@ -74,12 +78,10 @@ cmd/
 
 ### `domain/service/<name>/` — orchestrator
 
-`domain/service/validator/service.go` ร้อย 4 modules เข้าด้วยกัน — `Validate(o)` เรียก `orderval.Apply` → `quote.Apply` → `balance.Apply` → `limit.Apply` พร้อม short-circuit logic ที่ไม่เป็นของ module ใด module หนึ่ง:
+ระบบแบ่งการทำงานเป็น **Two-Phase Logic**:
 
-- shape fail → return ก่อน fetch market (เปลือง upstream)
-- market unavailable → return ก่อน hit balance/ledger (fail closed)
-- buy เท่านั้นถึงรัน balance.Apply
-- limit เป็น optional — `nil` = skip ทั้ง branch
+1.  **Validator Service (`validator/service.go`)**: เป็น orchestrator แบบ read-only (Soft Check) สำหรับทำ pre-flight validation (shape, price feed, soft balance check) เพื่อลด load DB
+2.  **Processor Service (`processor/processor.go`)**: เป็น orchestrator แบบ transactional (Hard Check) ทำหน้าที่เปิด database transaction, ทำ idempotency lookup, และเรียก `module.Apply()` ภายใต้ row-level lock (`SELECT FOR UPDATE`) เพื่อป้องกัน race conditions
 
 **Service ห้าม import Wire** — Wire เป็น infrastructure ส่วน service เป็น domain — domain ไม่ควรรู้จัก codegen tool
 
@@ -113,8 +115,8 @@ provider functions ระบุว่า port ไหนผูกกับ adapte
    wire/                                    ← Google Wire composition root
         │  (assembles the graph below)
         ▼
-   domain/service/validator                 ← orchestrator (plain Go)
-        │  (calls module.Apply in order, short-circuits on phase failure)
+   domain/service/{validator,processor}     ← orchestrators (plain Go)
+        │  (validator: pre-checks, processor: authoritative tx)
         ▼
    domain/module/{orderval,quote,balance,limit}
         ▲ (uses port)                      ▲ (implements port)
@@ -138,13 +140,12 @@ provider functions ระบุว่า port ไหนผูกกับ adapte
 
 | สิ่งที่จะเพิ่ม | ไปอยู่ที่ |
 |---|---|
-| Business rule ใหม่ใน sub-domain เดิม | `domain/module/<name>/core.go` (เพิ่ม method + Config field) |
-| Business sub-domain ใหม่ทั้งหมด (KYC, AML, FX rate) | `domain/module/<newname>/` (core.go + repository.go ถ้ามี port) |
-| Production adapter ใหม่ (Postgres, MySQL, Redis) | `domain/repositories/<name>.go` ใน package `repositories` (เพิ่ม ORM model ใน `models.go` ถ้าต้อง) |
-| In-memory test adapter ของ module เดิม | `domain/module/<existing>/memory.go` (อยู่ตรงนั้นแล้ว — แก้ struct) |
-| Service ใหม่ทั้ง deployment unit | `domain/service/<name>/` + `cmd/<name>/main.go` + เพิ่ม injector ใน `wire/` |
-| Cross-module type ใหม่ | `domain/common/<name>/` (เช่น `common/customer/`, `common/transaction/`) |
-| HTTP endpoint ใหม่ | `cmd/server/main.go` — เพิ่ม `mux.HandleFunc(...)` |
+| Business rule ใหม่ใน sub-domain เดิม | `domain/module/<name>/core.go` (แก้ Validate และ Apply) |
+| Business sub-domain ใหม่ทั้งหมด (KYC, AML) | `domain/module/<newname>/` (core.go + repository.go ถ้ามี port) |
+| Production adapter ใหม่ (Redis, Kafka) | `domain/repositories/<name>.go` ใน package `repositories` |
+| In-memory test adapter ของ module เดิม | `domain/module/<existing>/memory.go` |
+| Background Service (Price feed listener) | `domain/module/quote/dynamic.go` (ตัวอย่าง) หรือ service ใหม่ |
+| Service ใหม่ทั้ง deployment unit | `domain/service/<name>/` + เพิ่ม injector ใน `wire/` |
 
 ## ทำไมไม่ใช้ layout อื่น?
 
@@ -156,7 +157,7 @@ provider functions ระบุว่า port ไหนผูกกับ adapte
 
 ## Trade-offs ที่ยอมรับ
 
-1. **2 ที่ ที่ adapter อยู่ได้ (module/memory.go vs repositories/):** เปิดทาง confusion เล็กๆ — แต่กฎชัด: in-memory test/demo อยู่ใน module, production-shaped (GORM/HTTP/Redis) อยู่ใน `repositories/`
-2. **Wire codegen step:** เพิ่ม `make wire` + `make mock` ในวงจร dev — แลกกับ compile-time DI safety
-3. **Service มี orchestration logic:** module ไม่รู้ลำดับ flow → service ฉลาดพอตัดสินใจ short-circuit — เพราะ flow contextual กับ deployment ที่เรียกใช้
-4. **Result shared by reference:** ทุก module Apply() เขียน error เข้า `*Result` เดียวกัน → collect all errors ใน single pass แทนที่จะ short-circuit ทุก rule
+1. **Two-Phase Check (Soft/Hard):** เพิ่มความซับซ้อนเพราะต้อง implement กฎ 2 รอบ (read-only pre-flight และ transactional apply) — แลกกับความสามารถในการสเกล (Validator รันหน้าบ้าน Processor รันหลังบ้านภายใต้ lock) และ UX ที่ดีกว่า (reject เร็ว)
+2. **2 ที่ ที่ adapter อยู่ได้ (module/memory.go vs repositories/):** เปิดทาง confusion เล็กๆ — แต่กฎชัด: in-memory test/demo อยู่ใน module, production-shaped (GORM/HTTP/Redis) อยู่ใน `repositories/`
+3. **Wire codegen step:** เพิ่ม `make wire` + `make mock` ในวงจร dev — แลกกับ compile-time DI safety
+4. **Service มี orchestration logic:** module ไม่รู้ลำดับ flow → service ฉลาดพอตัดสินใจ short-circuit — เพราะ flow contextual กับ deployment ที่เรียกใช้

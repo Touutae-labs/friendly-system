@@ -1,7 +1,7 @@
 # Part 4 — เหตุผลเบื้องหลังการตัดสินใจ (ฉบับภาษาไทย)
 
 **ผู้ส่ง:** Pantakan Totae · `pantakan.totae@gmail.com`
-**วันที่:** 2026-05-15
+**วันที่:** 2026-05-16
 **Repo:** ดู `README.md` สำหรับ layout และวิธีรัน
 **English version:** [`Part_4_EN.md`](Part_4_EN.md)
 
@@ -13,47 +13,36 @@
 
 ### Dependency injection ผ่าน interface + Google Wire สำหรับ composition
 
-- **ที่เลือก:** แต่ละ module รับ port (interface) ตอน construct ผ่าน `New(...)` แล้วใช้ **Google Wire** เป็น composition root ที่ `wire/wire.go` — provider function ระบุว่า port ไหนผูกกับ adapter ตัวไหน + config ตัวไหน Wire จะ generate `wire_gen.go` เป็น constructor code ตอน `make wire` + `make mock`
-- **ราคาที่จ่าย:** เพิ่ม codegen step ใน dev workflow (`make wire` + `make mock` หลังเพิ่ม/ลบ dependency) + reviewer ต้องอ่าน `wire_gen.go` เพื่อดู topology ของ dependency tree ที่ runtime
-- **ที่ได้ ที่สำคัญที่สุด:** Wire ตรวจ DI graph ตอน **compile time** — ลืม register provider ของ port ไหน Wire แจ้งทันที ไม่ต้องรอ panic ตอน startup เหมือน reflection-based DI (uber-fx, dig) นอกจากนี้ test ใช้ memory adapter ที่อยู่ใน module เดียวกัน (`balance.NewMemory(...)`, `quote.NewMemory(...)`) production swap เป็น Redis/Postgres adapter โดยเปลี่ยน provider function ตัวเดียว — validator logic ใน module ไม่ต้องแตะ
-- **อีกประเด็น:** Wire เป็น codegen tool ไม่ใช่ runtime framework — production binary ไม่มี Wire dependency หลังจาก compile แล้ว build artifact สะอาดเท่า manual constructor
+ใช้ dependency injection ใน composition pattern พวก idiomatic go ให้เหมาะสมเช่นการ inject interface เพื่อให้เทสง่ายขึ้น รวมถึงการลดที่ให้การประกาศแล้ว inject ใน main.go ตอน run service ด้วย
+- **ทำไม:** ถูก pattern และโค๊ดอ่านง่ายกว่า
+- **ราคาที่จ่าย:** ต้องเรียนรู้ wire เพิ่ม
 
 ### `shopspring/decimal` แทน `float64`
 
-- **ที่เลือก:** ใช้ decimal library
-- **ราคาที่จ่าย:** เพิ่ม external dependency 1 ตัว
-- **ที่ได้:** กำจัดบั๊ก money-precision หรือ flaoting precision, shopspring เป็น standard ที่จัดการเรื่องนี้ได้ดีมาก แม้แต่บริษัทที่ขาย retail ที่ผมเคยทำงานก็ใช้
-- **หมายเหตุ:** ใช้ `decimal.RequireFromString("0.005")` ใน `DefaultConfig` จงใจ — อยากได้ exact constant ไม่ใช่ binary-float approximation
+แก้ floating precision
+- **ทำไม:** เพราะมันดีกว่าทุกอย่างในแง่ business ที่เกี่ยวกับเงิน
+- **ราคาที่จ่าย:** ต้อง convert เป็น shopspring type ไปมา แล้วต้องใช้ lib เพิ่ม
 
 ### Collect ทุก error vs short-circuit ที่ตัวแรก
 
-- **ที่เลือก:** Collect ทุกอัน
-- **ทำไม:** user ที่ submit order quantity ผิด *และ* price stale ด้วย เห็นทั้งสองพร้อมกันดีกว่ามาทีละอัน (whack-a-mole UX)
-- **ราคาที่จ่าย:** `Result` มี slice, test ต้อง look up by error code แทน `==` กับ string เดียว — รับได้
+รวม error ทั้งหมดไว้ Audit 
 
 ### Stateless `Validator`, ไม่มี internal mutex
 
-- **ที่เลือก:** validator แค่ตัดสิน ไม่ apply order, ไม่ mutate balance
-- **ทำไม:** concurrency เป็นเรื่องของ caller (order-execution service) ตรงที่ apply balance จริง — push lock เข้า validator คือ premature
-- **อีกประเด็น:** per-customer lock ที่ต้องใช้จริงๆ มันอยู่ใน execution layer ไม่ใช่ใน validation
+ตอนจะ lock ไม่ล้อคไม่ควรอยู่ใน preflight ควรอยู่ในตอนทำ transaction
+- **ทำไม:** ทำไม ? เร็วกว่า ตรงกว่าไม่เปลือง resource DB
+- **ราคาที่จ่าย:** ข้อเสีย ? ต้องไปจัดการใน transaction ตอนทำ transaction จริงๆ (ซึ่งถูกแล้ว)
 
 ### 1 module = 1 business sub-domain (ports & adapters style)
 
-- **ที่เลือก:** แยก business rule ออกเป็น 4 module ตาม sub-domain ของ assessment — `orderval` (shape ของ order, Part 2 rules 1-3), `quote` (price freshness + spread calc, Part 2 rule 5 รวม Part 3A), `balance` (balance check สำหรับ buy, Part 2 rule 4), `limit` (daily trading quota, Part 3B) แต่ละ module เป็นเจ้าของ port ของตัวเอง + error codes + Config service เป็นแค่ orchestrator ที่ร้อย module เรียงตามลำดับ
-- **ทำไม:** ตอนแรกเขียนเป็น Validator monolithic ตัวเดียวที่รับทุก port — แต่พอเห็น Part 3 "เพิ่ม" rule ใหม่ 2 ตัว (spread กับ daily limit) ก็เริ่ม signal ว่า business ของ InterGold ยังจะมี rule ใหม่เข้ามาเรื่อยๆ ในอนาคต (KYC tier, AML, per-customer-tier limit ฯลฯ) ถ้าคงเป็น monolithic ไว้ เพิ่ม rule ที่ 7 ที่ 8 จะแก้ file เดิมที่ใหญ่ขึ้นเรื่อยๆ test scope กว้างขึ้น blast radius ของทุก refactor ก็เพิ่ม — เพิ่มผ่าน module ใหม่ทุกอย่างมัน scoped ใหม่หมด ของเดิมไม่ต้องแตะเลย
-- **ราคาที่จ่าย:** folder เยอะขึ้น (4 modules + service + adapters แยก folder) import path ยาวขึ้น (`domain/module/quote` แทนที่จะเป็น `validator` ตัวเดียว) — แต่ reviewer เปิด `domain/module/` ก็เห็นภาพรวม business sub-domain ทันทีว่ามีอะไรบ้าง — เป็น navigation aid ไม่ใช่ overhead
-- **ที่ได้ ที่จับต้องได้:**
-  - test แต่ละ module pure ตามที่มันต้องการ — `orderval` ไม่ต้องมี mock เลย, `quote` mock แค่ `MarketPriceProvider` เท่านั้น — ไม่ต้องลากทั้ง stack มา test rule เดียว
-  - swap adapter ของ module ใดได้โดยไม่กระทบ module อื่น — `quote.NewMemory(...)` (test/demo) → `repositories.NewMarket(...)` (production Redis) กระทบแค่ wire provider ของ `quote`
-  - ถ้าวันหน้า `limit` ต้อง durable counter (Redis sorted set) แล้วโตเป็น service ของตัวเอง — boundary มันชัดอยู่แล้ว split ออกได้โดยไม่ต้องคุ้ย code
-- **Service orchestrator มี short-circuit logic ที่ไม่ใช่ของ module ใด module หนึ่ง:** shape fail → return ก่อน fetch market (เปลือง upstream feed), market unavailable → return ก่อน hit balance/ledger (fail closed) — pattern แบบนี้ถ้าฝัง logic เข้าไปใน module จะ blur boundary ปล่อยอยู่ใน service ที่รู้ context ของ flow ทั้งหมดดีกว่า
-- **เมื่อไรไม่ต้อง split แบบนี้:** rule set รู้แน่ว่านิ่งตลอด lifetime + ทีมเล็ก + ไม่มีแผน split microservice — overhead ของ 4 folder ไม่คุ้ม กลับไปใช้ Validator monolithic ตัวเดียวอ่านง่ายกว่า
+- **ทำไม:** โค๊ดอ่านง่ายกว่า แก้ง่ายกว่า มีการแบ่ง business ชัดเจนให้ player ที่เป็นคน หรือ high-level อ่านว่าโค๊ดแต่ละส่วนทำงานยังไงได้มากขึ้น มีการแบ่ง service -> Orchestator / Module -> Business of each module /Repository -> Persistance layer
+- **ราคาที่จ่าย:** ไฟล์กับโฟลเดอร์จะเยอะนิดนึง แต่โค๊ดโดยรวมจะเป็นสัดส่วนแบ่งง่ายขึ้น
 
 ### `limit` module เป็น optional
 
-- **ที่เลือก:** `Service.New()` รับ `*limit.Validator` ที่อาจเป็น `nil` ได้ → daily-limit check ถูก skip ทั้ง branch
-- **ทำไม:** Part 2 ต้อง testable แบบ pure โดยไม่พึ่ง Part 3 — Service ที่สร้างด้วย `limit = nil` ผ่าน Part 2 ทุกข้อโดยไม่ต้อง mock DailyLedger เพิ่ม นอกจากนี้ caller ที่ไม่สนใจ daily limit (เช่น internal ops tool ที่ override ข้าม quota ของลูกค้า VIP) opt out ได้โดยไม่ต้องเขียน validator ตัวที่สอง — กลับมาเปิดเปลี่ยน config ของ service ตัวเดียวก็พอ
-- **ราคาที่จ่าย:** มี nil check ใน service.Validate() ก่อนเรียก limit.Apply() — แลกแล้วคุ้ม
+`Service.New()` รับ `*limit.Validator` ที่อาจเป็น `nil` ได้ → daily-limit check ถูก skip ทั้ง branch
+- **ทำไม:** ฟังก์ชัน Service.New() อนุญาตให้รับ *limit.Validator เป็น nil ได้ เพื่อให้ง่ายต่อการทดสอบ Part 2 แบบ Pure Logic โดยไม่ต้องพึ่ง Part 3 (ไม่ต้อง Mock DailyLedger) นอกจากนี้ Use case อย่าง Internal Ops Tool ที่ต้องการข้ามโควตาลูกค้า VIP ก็สามารถ Opt-out ได้เพียงแค่ปรับ Config ของ Service ตัวเดียว
+- **ราคาที่จ่าย:** ต้องมี Nil check ใน service.Validate() ก่อนเรียก limit.Apply() ซึ่งถือว่าคุ้มค่าเมื่อเทียบกับความยืดหยุ่นที่ได้มี nil check ใน service.Validate() ก่อนเรียก limit.Apply() — แลกแล้วคุ้ม
 
 ## 2. ทางเลือกอื่นๆ ที่พิจารณา
 
@@ -73,25 +62,25 @@
 
 ### Monolithic Validator (1 struct ทุก rule) vs ports-and-adapters modules
 
-- **ที่พิจารณา + ที่ลองเขียนช่วงแรก:** ทุก rule อยู่ใน `Validator` ตัวเดียวที่รับทุก port (`AccountRepository` + `MarketPriceProvider` + `DailyLedger`) ใน constructor แล้วทำ rule sequence เป็น helper methods (`checkOrderType`, `checkQuantity`, `checkBuy`, `checkSell` ฯลฯ) ใน `Validate()` method เดียว — เริ่มเขียนแบบนี้จริงๆ ใน iteration แรก เพราะ rule set ของ Part 2 มันเล็กพอที่ pipeline ceremony ยังไม่คุ้ม
-- **ที่เปลี่ยนเพราะอะไร:** พอเข้า Part 3 เห็นเลยว่า assessment มัน "เพิ่ม" rule ใหม่ 2 ตัวที่เป็น sub-domain แยก (spread คือ pricing concern, daily limit คือ quota concern) — เป็น preview ของ business future: จะมี KYC, AML, tier limit, market-specific rule เข้ามาเรื่อยๆ ถ้าคง monolithic ต่อไป file `validator.go` จะโตเรื่อยๆ จนถึงจุดที่ refactor แพงเกินกว่าจะทำ — refactor ตอนยังเล็กถูกที่สุด เลยตัด split ตอนนี้เลย
-- **ราคาของการ refactor ในตอนนั้น:** rewrite test ของ Part 2 ทั้งหมดให้ใช้ service ที่ compose modules + update Wire setup + เขียน orchestration logic ใน service — ใช้เวลาเพิ่มประมาณ 1 ชม แลกกับ scalability ที่ business จะเริ่มเห็นใน iteration ถัดๆ ไป
-- **เมื่อไรเดิม monolithic จะดีกว่า:** ถ้ารู้แน่ว่า rule set จะนิ่งตลอด lifetime + ทีมเล็กไม่ต้อง parallelise การพัฒนา + ไม่มีแผน split microservice — overhead ของ folder/wire setup กับ orchestration logic ไม่คุ้ม monolithic อ่านจบใน 1 file ก็พอ
+- **ทำไม** รวม rule check ที่เดียวเพื่อ central log กับ audit
+- **ข้อเสีย** ต้อง migrate ถ้าแต่ละ module ใหญ่เกินไปในภายหลัง เช่นการเช็คอาจต้องมีการ KYC etc.
 
 ### Short-circuit ที่ error แรก (full short-circuit)
 
-- **ที่ลอง:** บนกระดาษ — Validate รัน rule ทีละตัว เจอ error แรกก็ return ทันที
-- **ที่ปฏิเสธ:** UX แย่กว่า — user submit order ที่ quantity ผิด *และ* price stale พร้อมกัน ถ้า short-circuit ที่ตัวแรกจะเห็น error ทีละอันแก้ทีละครั้ง (whack-a-mole) เก็บ short-circuit ไว้แค่ระหว่าง *phase* แทน: shape ผิด → ไม่ถาม DB (เปลือง lookup) market ล่ม → ไม่ต้อง check balance/limit (validate ไม่ได้อยู่แล้ว) — ภายใน phase เดียว collect ทุก error ที่เจอ
+- **ที่ลอง:** รัน Rule ทีละตัว เจอ Error แรกก็ Return เลยจะได้ไม่ต้องเสียเวลาเช็คส่วนอื่น
+- **ที่ปฏิเสธ:** UX แย่กว่ามาก หาก User ส่ง Order ที่ Quantity ผิด และ Price Stale พร้อมกัน การเก็บ Short-circuit ไว้คั่นระหว่าง Phase เหมาะสมกว่า เช่น Shape ผิด -> ไม่ต้องถาม DB (ประหยัด Lookup), Market ล่ม -> ไม่ต้องเช็ค Balance (เพราะ Validate ต่อไม่ได้) แต่ภายใน Phase เดียวกัน ควร Collect Error ให้ครบ
 
 ## 3. กระบวนการวิเคราะห์ Part 1 (debugging process)
 
 ลำดับการอ่านโค้ด ประมาณนี้
 
-1. **อ่านรอบแรก เพื่อเข้าใจว่ามันทำอะไร** — ดูว่า branch ไหน buy / sell
-2. **อ่านรอบสอง สวมหมวก security** — financial code → สิ่งแรกที่หาคือ SQL injection หรือ unauthenticated mutation — string-built SQL เห็นได้ทันที, SQL injection ขึ้น top ของ list
-3. **อ่านรอบสาม สวมหมวก numeric correctness** — money + Python float = yellow flag, "balances" + Python float = red flag
-4. **อ่านรอบสี่ failure modes** — ไม่มี try/except, ไม่มี rollback, ไม่มี conn.close(), sell path ไม่ validate, race condition จาก read-then-write — บั๊กแบบนี้กัดใน production หลังจาก review นานๆ
-5. **rank by blast radius** — SQL injection (rewrite ทุก balance) → silent slow corruption (float arithmetic) → race condition จาก read-then-write → no exception handling + connection leak → sell-side missing validation → customer-not-found crash + input validation — ranking นี้คือสิ่งที่ผมจะ lead ใน real review conversation เพราะ "fix ทุกข้อ" จะ overwhelm junior author แต่ "fix ข้อที่ทำให้ attacker drain เงินบริษัทได้" actionable
+1. **อ่านรอบแรก เพื่อเข้าใจว่ามันทำอะไร** — ทีแรกดูก่อนว่า context ของ code คืออะไร
+2. **ใช้ AI Research + Google เพื่อดูพวก library ต่างๆ** จะดูว่า Lib เกี่ยวกับ DB เป็นไงใช้ถูกต้องไหม โดยเฉพาะ SQL Injection + SQL Handling
+3. **หา memory leak** อันนี้มาดูก่อนว่า mem leak อยู่ตรงไหนบ้าง
+4. **ดูข้อ 2 ต่อ** ว่ามีการทำ pagination ไหม หรือทีการทำ chunk ไหม ว่า DB เพราะการที่ memory bloat ใน ram = service down ผมจะทำ backpressure etc ตามสไตล์คนทำงาน batch proceser
+5. **Optimized SQL** ก่อนเลย อย่างแรก เพราะ DB เป็น bottomneck ตลอด
+6. **Race Condition** เช็คพวก race condition Idempotency key ต่อ
+7. คือใช้ AI ช่วยว่าผมขาดส่วนไหน ประมาณนี้เลย
 
 ## 4. ถ้าโตเป็น production service ระดับ thousands of orders/min
 
@@ -103,61 +92,34 @@
 - "Fail closed when market price unavailable" rule
 - Hardening pieces ที่เพิ่งทำ: config validation, sanity ceilings, customer_id scrubbing — ทั้งหมดยิ่งสำคัญที่ scale
 
-### สิ่งที่ผม build ไปแล้วใน submission นี้ (เป็นพื้นฐานของ scale path)
+### สิ่งที่สร้างไว้แล้วเป็นรากฐาน
+- Transaction Safety (BEGIN; SELECT FOR UPDATE; COMMIT;): ครอบคลุม Account Lock, Balance Check, Daily Ledger และ Audit Log ไว้ใน ACID Transaction เดียวกัน
 
-- **Executor service ทำ `BEGIN; SELECT FOR UPDATE; validate; UPDATE; COMMIT;` จริง** — อยู่ที่ `domain/service/processor` รับ Order + Idempotency-Key, lock account row, recheck balance/limit ใต้ lock, debit/credit, insert order audit row, increment daily ledger — ทั้งหมดใน tx เดียว validator ยังเป็น pure read-only เหมือนเดิม
-- **`limit.Memory` swap เป็น GORM `daily_totals` row** ที่ update transactional กับ order — `domain/repositories/ledger.go` ใช้ `clause.Locking{Strength: "UPDATE"}` (Postgres/MySQL row lock; SQLite serialised tx)
-- **Idempotency keys** — `Idempotency-Key` header + UNIQUE index บน `orders.idempotency_key` retry POST = no double-debit ตอบ `status: "duplicate"` พร้อม `order_id` เดิม
-- **Durable audit row per execution** — ทุก filled order มี row ใน `orders` table (customer_id, order_type, quantity, quoted_price, total, new_balance, created_at)
-- **Structured request + business logging** — `log/slog` text format ทุก request log: method/path/status/duration_ms; ทุก validate/process log: customer_id/order_type/quantity/valid/error_codes (ไม่มี PII — ไม่ log ชื่อลูกค้า)
-- **HTTP hardening** — `ReadHeaderTimeout`, `Read/WriteTimeout`, `DisallowUnknownFields` ใน JSON decoder, graceful shutdown บน SIGINT/SIGTERM
+- Idempotency: ป้องกันปัญหา Double-debit ด้วย Idempotency-Key และ UNIQUE constraint
 
-### สิ่งที่ผมจะ change เพิ่ม (ถ้าโตขึ้น)
+- Observability: มีการทำ Structured Logging (slog) เก็บ Metrics สำคัญโดยไม่ละเมิด PII ของลูกค้า
 
-- **Cache market price** ด้วย short TTL (~250–500 ms) — ที่ thousands/min, refetch ต่อ validate มันสิ้นเปลือง + รังแก upstream feed — เพิ่ม "price age" field ใน `Result` ด้วย caller จะ trace bad fill กลับ tick stale ได้
-- **Observability ที่ลึกกว่านี้:** validation latency histogram, error-code counter, request-trace ID ที่ผูกระหว่าง gateway → validator → processor (ตอนนี้ slog log มีแค่ structured fields ยังไม่มี trace ID)
-- **Per-customer rate limit** (orders/sec) ที่ API boundary ก่อน validation
-- **Split "cheap" pre-validation** (shape rules) ไป API gateway → reject garbage โดยไม่เผา market lookup, validator's heavier rules อยู่ใน order service
-- **Property-based tests** เพิ่มจาก table-driven — fuzz quantity/price boundaries
-- **Outbox pattern** สำหรับ event publishing — order filled → publish ไป Kafka/NATS ใน outbox row ของ tx เดียวกัน, separate publisher loop ไป downstream system (settlement, accounting, customer notification)
+- HTTP Hardening: กำหนด Timeouts ชัดเจน, ป้องกัน Unknown JSON fields และรองรับ Graceful Shutdown### สิ่งที่ผม build ไปแล้วใน submission นี้ (เป็นพื้นฐานของ scale path)
+
+### สิ่งที่จะพัฒนาต่อ (Future Roadmap)
+- Market Price Caching: เพิ่ม Redis เพื่อ Cache ราคา (TTL สั้นๆ 250-500ms) ลดโหลดของ Upstream Feed
+
+- Deep Observability: ผูก Request-Trace ID แบบ End-to-end (Gateway → Validator → Processor) และเพิ่ม Latency Histograms
+
+- Rate Limiting: ทำ Per-customer limit (Orders/sec) ที่ API Gateway
+
+- Event-Driven Architecture (Outbox Pattern): เมื่อ Order filled จะเขียนลง Outbox table เพื่อ Publish เข้า Kafka/NATS ไปยังระบบปลายทาง (Settlement, Notifications) โดยไม่บล็อก Core Executionotification
 
 ### Service split: validator + price feed + execution (เมื่อ scale มาถึงจุดที่ต้องแยก)
+หาก Throughput สูงมาก การย้าย Price Feed และ Execution ออกจากกันจะจำเป็น ผมเล็ง Layout ไว้ดังนี้:
 
-ที่ thousands/min การ refetch market price ทุก validation + redeploy ทุกอย่างเพื่อแก้ feature เดียว เริ่มเจ็บ — แยก service ตาม responsibility คุ้มที่จุดนี้
+- validator-svc: ทำหน้าที่ตรวจสอบ Business Rules ล้วนๆ
 
-**Layout ที่จะ aim:**
+- price-svc: Subscribe ราคาจากแหล่งนอก แล้ว Broadcast ลง Redis (Pub/Sub)
 
-```
-core/                  ← pure logic, ไม่มี I/O
-  validator/           ← package ปัจจุบัน + interfaces
-  order/               ← Order, Result, Error types
-  ledger/              ← daily-limit math
-common/                ← shared contract (proto / OpenAPI gen)
-  domain/
-services/
-  validator-svc/       ← thin HTTP/gRPC wrapper รอบ core/validator
-  price-svc/           ← subscribe upstream feed → fan out via Redis
-  execution-svc/       ← รับ order → call validator-svc → apply balance ใน tx
-```
+- execution-svc: รับ Order ที่ผ่าน Validation แล้วไปรัน ACID Transaction ในฐานข้อมูล
 
-**Price service + Redis backend:**
-
-- `price-svc` subscribe upstream feed (Bloomberg / Reuters / gold-hub API) — เขียนทุก tick: `SET market:gold:thb <price> EX 5` + `PUBLISH market:gold:thb:tick`
-- `validator-svc` ดึงผ่าน `GET market:gold:thb` (sub-ms) หรือ maintain local cache prime จาก pub/sub
-- `MarketPriceProvider` interface ปัจจุบัน swap implementation จาก `StaticMarket` → `RedisMarketAdapter` ได้ตรงๆ — **validator core code = 0 lines เปลี่ยน** ซึ่งคือ payoff ของ DI ที่อธิบายในข้อ 1
-
-**ทำไม layout นี้:**
-
-- `core/` ทดสอบเป็น pure logic ได้ — unit test ไม่แตะ Redis / network
-- `common/` เป็น contract กลาง — proto/OpenAPI generate ให้ทั้ง 3 service เปลี่ยน `Order` shape ครั้งเดียว downstream ทุกตัวตามทันที
-- `services/` บางๆ — `main()` แค่ wire `core` เข้า transport + observability stack
-
-**Minimum changes เพื่อ enable:**
-
-1. Implement `RedisMarketAdapter` ที่ satisfy `MarketPriceProvider`
-2. ย้าย `limit.Memory` → Redis sorted set (key `customer:YYYY-MM-DD`) หรือ Postgres `daily_totals` row update transactional กับ order
-3. Wrap `Validator.Validate` ด้วย gRPC handler ใน `validator-svc`
-4. Validator core: 0 lines เปลี่ยน
+โครงสร้าง Code ปัจจุบันถูกออกแบบมาให้รองรับการ Split นี้ได้อย่างเจ็บปวดน้อยที่สุดครับ
 
 **เมื่อไรไม่ควร split:**
 
@@ -165,14 +127,10 @@ services/
 
 ## 5. Tools ที่ใช้
 
-ผมใช้ **Claude (Anthropic)** ใน assessment นี้ 2 แบบ
+ผมใช้ **Claude (Anthropic) + Gemini ** ใน assessment
+- ช่วย research 
+- ช่วยเขียน code guideline มาก่อนแบบเอกสารนี้แล้วผมแก้ทีหลัง
+- ทำให้ภาษาที่ผมเขียนอ่านได้ง่ายขึ้น หรือบางทีถ้าคำมันผิดหลักการก็จะได้แก้ให้เพราะบางทีคำเดียวกันแต่ใช้คนละแบบ (ผมมีปัญหานี้ตอนสัมภาษณ์บ่อย)
+- ช่วยเขียนโค๊ดหรือช่วยหาปัญหา index code เพื่อใช้ภายหลัง เวลาจะถามหรือส่วนให้
+- ทุกส่วนผมจะอ่านแล้วมาแก้เสมอ จะไม่มีส่วนไหนที่ AI เขียนแล้วผมไม่ยุ่ง ยกเว้นการแปลงานอะไรแบบนี้ ที่ output ผิดได้บ้าง
 
-- **เป็น reasoning partner** — ช่วย enumerate edge case ที่อาจมองข้าม (เช่น "ถ้า `expected` เป็น 0 ใน `withinTolerance` ล่ะ", "ถ้า customer's daily total เกิน limit แล้วก่อน order นี้มาล่ะ") + pressure-test การจัด ranking ใน Part 1 ("แน่ใจไหมว่า SQL injection ranks กว่า float precision?")
-- **draft mechanical code ตัวแรก** — test scaffolding (table-driven cases, helper `dec`) กับ `cmd/seed/main.go` + `cmd/server/main.go` driver ส่วนใหญ่ draft ด้วย Claude — body ของ `Validator.Validate` กับ orchestration ใน `service/validator/service.go` เป็นของผม
-
-วิธีที่ผม verify output
-
-- รัน `make ci` (= lint + test) และ `make ci` — อ่าน failing test จนผ่าน
-- Hand-walk ทุก error code อย่างน้อย 1 ครั้ง — ยืนยันว่า human-readable message อ่านแล้วเข้าใจในมุมลูกค้า ("balance 500.00 THB is less than required 42210.00 THB" ไม่ใช่ "ERR_INSUFFICIENT")
-- อ่าน assessment requirement ทีละ rule เทียบกับ implementation — tick ทุกอัน (order type, quantity positive + multiples of 0.5, positive price, sufficient balance for buys, ±2% freshness, 0.5% spread margin on buys, 5 baht-weight daily limit + remaining-allowance message) — requirement ทุกข้อ map ไป test ที่ตั้งชื่อไว้อย่างน้อย 1 อัน
-- อ่าน diff รอบสุดท้ายด้วย mindset เดียวกับ Part 1 — float ที่อยู่ผิดที่, error stringly-typed ที่ควรเป็น const, missing nil check — ไม่เจอใน final pass

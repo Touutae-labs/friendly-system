@@ -1,7 +1,7 @@
 # Part 1 — วิเคราะห์ `process_gold_order` (ฉบับภาษาไทย)
 
 **ผู้ส่ง:** Pantakan Totae · `pantakan.totae@gmail.com`
-**วันที่:** 2026-05-15
+**วันที่:** 2026-05-16
 **Repo:** ดู `README.md` สำหรับ layout และวิธีรัน
 **English version:** [`Part_1_EN.md`](Part_1_EN.md)
 
