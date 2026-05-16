@@ -11,7 +11,7 @@
 
 ### Summary
 
-Direction is right — separating batch orchestration from per-order processing, returning structured results, and providing a summary helper are all good shapes. **I would not merge this as-is**, because several of the same problems we should be fixing from Part 1 are still present here (TOCTOU on balance, float arithmetic on money, missing inventory check on sells), plus new issues specific to the batch and concurrency model.
+This is the shape I'd want this service to eventually be. If we ever move to an Event-Driven model (Kafka, NATS), this structure maps directly — the separation of batch orchestration from per-order processing is exactly right, structured results are good, and the summary helper is clean. **I would not merge this as-is**, though, because the problems we were trying to fix from Part 1 are still present here (TOCTOU on balance, float arithmetic on money, missing inventory check on sells), plus new issues specific to the batch and concurrency model.
 
 All **block** items below must be resolved before merge. **Nit** items I'd leave as inline comments and clear once the blocks are done.
 
@@ -30,7 +30,7 @@ All **block** items below must be resolved before merge. **Nit** items I'd leave
 
 ### Block (must fix before merge)
 
-#### B1. TOCTOU race on balance — the lock is in the wrong place
+#### B1. TOCTOU (Time of Check, Time of Use) race on balance — the lock is in the wrong place
 
 ```python
 balance = customer_balances[customer_id]   # read OUTSIDE the lock
@@ -128,3 +128,7 @@ For a customer who buys 1k and sells 0.5k, `net_cost = 500`. The math is correct
 3. Remaining C and N items can land in a follow-up PR.
 
 Happy to pair on the per-customer-lock refactor (B1) — that's the one most likely to introduce its own bug if rushed.
+
+---
+
+*Why did I use AI to help write this review?* Simple: AI helps expand the parts that deserve expanding. I don't think I'd have written it this thoroughly on my own, but the core findings and their priority order are mine.
