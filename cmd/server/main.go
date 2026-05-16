@@ -15,6 +15,7 @@ import (
 
 	"github.com/glebarez/sqlite"
 	"github.com/Touutae-labs/friendly-system/domain/common/order"
+	"github.com/Touutae-labs/friendly-system/domain/repositories"
 	"github.com/Touutae-labs/friendly-system/domain/service/processor"
 	validatorsvc "github.com/Touutae-labs/friendly-system/domain/service/validator"
 	"github.com/Touutae-labs/friendly-system/wire"
@@ -211,6 +212,9 @@ func buildService(dbPath string) (*validatorsvc.Service, *processor.Service, fun
 	})
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("open %s: %w", dbPath, err)
+	}
+	if err := db.AutoMigrate(repositories.AllModels()...); err != nil {
+		return nil, nil, nil, fmt.Errorf("migrate: %w", err)
 	}
 	svc, err := wire.InitValidatorServiceGorm(db)
 	if err != nil {

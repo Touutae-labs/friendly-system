@@ -34,6 +34,11 @@ func setup(t *testing.T) (*processor.Service, *gorm.DB) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("get sql.DB: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
 	t.Cleanup(func() {
 		if sqlDB, e := db.DB(); e == nil {
 			_ = sqlDB.Close()
@@ -277,5 +282,69 @@ func TestProcessor_DailyTotalIncrements(t *testing.T) {
 	total := dt.Total
 	if !total.Equal(dec("1")) {
 		t.Errorf("expected daily total 1, got %s", total)
+	}
+}
+
+func TestProcessor_ApplyBalance_Rejections(t *testing.T) {
+	proc, _ := setup(t)
+	// C002 has 500 THB; 0.5 * 42,210 = 21,105 > 500 → insufficient balance.
+	// Quote must be valid so the order passes quote validation and reaches the balance check.
+	expBuy := dec("42000").Mul(decimal.NewFromInt(1).Add(quote.DefaultConfig().SpreadMargin))
+	o := order.Order{CustomerID: "C002", OrderType: order.Buy, Quantity: dec("0.5"), QuotedPrice: expBuy}
+
+	r := proc.Process(context.Background(), "reject-balance", o)
+	if r.Status != processor.StatusRejected {
+		t.Fatalf("status=%s, want rejected", r.Status)
+	}
+	found := false
+	for _, e := range r.ValidationErrors {
+		if e.Code == balance.CodeInsufficientBalance {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected %s in errors, got %+v", balance.CodeInsufficientBalance, r.ValidationErrors)
+	}
+}
+
+func TestProcessor_ApplyDailyLimit_Rejections(t *testing.T) {
+	proc, _ := setup(t)
+	// Quantity 5.5 > daily limit 5; C001 balance covers the cost.
+	// Quote must be valid so the order passes quote validation and reaches the limit check.
+	expBuy := dec("42000").Mul(decimal.NewFromInt(1).Add(quote.DefaultConfig().SpreadMargin))
+	o := order.Order{CustomerID: "C001", OrderType: order.Buy, Quantity: dec("5.5"), QuotedPrice: expBuy}
+
+	r := proc.Process(context.Background(), "reject-limit", o)
+	if r.Status != processor.StatusRejected {
+		t.Fatalf("status=%s, want rejected", r.Status)
+	}
+	found := false
+	for _, e := range r.ValidationErrors {
+		if e.Code == limit.CodeDailyLimitExceeded {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected %s in errors, got %+v", limit.CodeDailyLimitExceeded, r.ValidationErrors)
+	}
+}
+
+func TestProcessor_ContextCanceled(t *testing.T) {
+	proc, _ := setup(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel immediately
+
+	// Valid order that would pass preflight — context already canceled so tx should abort.
+	expBuy := dec("42000").Mul(decimal.NewFromInt(1).Add(quote.DefaultConfig().SpreadMargin))
+	o := order.Order{CustomerID: "C001", OrderType: order.Buy, Quantity: dec("0.5"), QuotedPrice: expBuy}
+	r := proc.Process(ctx, "idem-cancel", o)
+	
+	if r.Status != processor.StatusError {
+		t.Fatalf("status=%s, want error", r.Status)
+	}
+	if r.Reason != "request canceled" {
+		t.Errorf("reason=%s, want request canceled", r.Reason)
 	}
 }
