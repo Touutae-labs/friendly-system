@@ -1,6 +1,7 @@
 package limit_test
 
 import (
+	"context"
 	"sync"
 	"testing"
 	"time"
@@ -27,7 +28,7 @@ func TestMemory_ConcurrentRecord(t *testing.T) {
 		}()
 	}
 	wg.Wait()
-	got, err := led.TradedToday("C001", now)
+	got, err := led.TradedToday(context.Background(), "C001", now)
 	if err != nil {
 		t.Fatalf("TradedToday: %v", err)
 	}

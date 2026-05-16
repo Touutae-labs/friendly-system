@@ -50,6 +50,7 @@ func InitProcessorService(db *gorm.DB) (*processor.Service, error) {
 		provideAccountsGorm,
 		provideMarket,
 		provideLedgerGorm,
+		provideOrdersGorm,
 		moduleSet,
 		processor.New,
 	)

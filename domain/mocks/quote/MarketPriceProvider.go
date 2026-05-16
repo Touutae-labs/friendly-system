@@ -3,6 +3,8 @@
 package quotemocks
 
 import (
+	context "context"
+
 	decimal "github.com/shopspring/decimal"
 	mock "github.com/stretchr/testify/mock"
 )
@@ -20,9 +22,9 @@ func (_m *MarketPriceProvider) EXPECT() *MarketPriceProvider_Expecter {
 	return &MarketPriceProvider_Expecter{mock: &_m.Mock}
 }
 
-// CurrentPrice provides a mock function with no fields
-func (_m *MarketPriceProvider) CurrentPrice() (decimal.Decimal, error) {
-	ret := _m.Called()
+// CurrentPrice provides a mock function with given fields: ctx
+func (_m *MarketPriceProvider) CurrentPrice(ctx context.Context) (decimal.Decimal, error) {
+	ret := _m.Called(ctx)
 
 	if len(ret) == 0 {
 		panic("no return value specified for CurrentPrice")
@@ -30,17 +32,17 @@ func (_m *MarketPriceProvider) CurrentPrice() (decimal.Decimal, error) {
 
 	var r0 decimal.Decimal
 	var r1 error
-	if rf, ok := ret.Get(0).(func() (decimal.Decimal, error)); ok {
-		return rf()
+	if rf, ok := ret.Get(0).(func(context.Context) (decimal.Decimal, error)); ok {
+		return rf(ctx)
 	}
-	if rf, ok := ret.Get(0).(func() decimal.Decimal); ok {
-		r0 = rf()
+	if rf, ok := ret.Get(0).(func(context.Context) decimal.Decimal); ok {
+		r0 = rf(ctx)
 	} else {
 		r0 = ret.Get(0).(decimal.Decimal)
 	}
 
-	if rf, ok := ret.Get(1).(func() error); ok {
-		r1 = rf()
+	if rf, ok := ret.Get(1).(func(context.Context) error); ok {
+		r1 = rf(ctx)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -54,13 +56,14 @@ type MarketPriceProvider_CurrentPrice_Call struct {
 }
 
 // CurrentPrice is a helper method to define mock.On call
-func (_e *MarketPriceProvider_Expecter) CurrentPrice() *MarketPriceProvider_CurrentPrice_Call {
-	return &MarketPriceProvider_CurrentPrice_Call{Call: _e.mock.On("CurrentPrice")}
+//   - ctx context.Context
+func (_e *MarketPriceProvider_Expecter) CurrentPrice(ctx interface{}) *MarketPriceProvider_CurrentPrice_Call {
+	return &MarketPriceProvider_CurrentPrice_Call{Call: _e.mock.On("CurrentPrice", ctx)}
 }
 
-func (_c *MarketPriceProvider_CurrentPrice_Call) Run(run func()) *MarketPriceProvider_CurrentPrice_Call {
+func (_c *MarketPriceProvider_CurrentPrice_Call) Run(run func(ctx context.Context)) *MarketPriceProvider_CurrentPrice_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run()
+		run(args[0].(context.Context))
 	})
 	return _c
 }
@@ -70,7 +73,7 @@ func (_c *MarketPriceProvider_CurrentPrice_Call) Return(_a0 decimal.Decimal, _a1
 	return _c
 }
 
-func (_c *MarketPriceProvider_CurrentPrice_Call) RunAndReturn(run func() (decimal.Decimal, error)) *MarketPriceProvider_CurrentPrice_Call {
+func (_c *MarketPriceProvider_CurrentPrice_Call) RunAndReturn(run func(context.Context) (decimal.Decimal, error)) *MarketPriceProvider_CurrentPrice_Call {
 	_c.Call.Return(run)
 	return _c
 }

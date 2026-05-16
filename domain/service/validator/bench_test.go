@@ -1,6 +1,7 @@
 package validatorsvc_test
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -27,7 +28,7 @@ func newBenchService(b *testing.B, accounts balance.AccountRepository, mkt quote
 	if err != nil {
 		b.Fatalf("balance.New: %v", err)
 	}
-	var l *limit.Validator
+	var l *limit.Module
 	if led != nil {
 		l, err = limit.New(limit.DefaultConfig(), led)
 		if err != nil {
@@ -46,7 +47,7 @@ func BenchmarkValidate_HappyBuy(b *testing.B) {
 	o := order.Order{CustomerID: "C001", OrderType: order.Buy, Quantity: dec("0.5"), QuotedPrice: expectedBuyPrice("42000")}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = v.Validate(o)
+		_ = v.Validate(context.Background(), o)
 	}
 }
 
@@ -58,6 +59,6 @@ func BenchmarkValidate_RejectedDailyLimit(b *testing.B) {
 	o := order.Order{CustomerID: "C001", OrderType: order.Sell, Quantity: dec("1"), QuotedPrice: dec("42000")}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = v.Validate(o)
+		_ = v.Validate(context.Background(), o)
 	}
 }

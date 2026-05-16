@@ -14,3 +14,7 @@ func provideAccountsGorm(db *gorm.DB) balance.AccountRepository {
 func provideLedgerGorm(db *gorm.DB) limit.DailyLedger {
 	return repositories.NewLedger(db)
 }
+
+func provideOrdersGorm(db *gorm.DB) repositories.OrderRepository {
+	return repositories.NewOrder(db)
+}

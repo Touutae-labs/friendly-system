@@ -1,6 +1,7 @@
 package validatorsvc_test
 
 import (
+	"context"
 	"strings"
 	"sync"
 	"testing"
@@ -37,7 +38,7 @@ func mustNew(t *testing.T, accounts balance.AccountRepository, mkt quote.MarketP
 	if err != nil {
 		t.Fatalf("balance.New: %v", err)
 	}
-	var l *limit.Validator
+	var l *limit.Module
 	if led != nil {
 		l, err = limit.New(limit.DefaultConfig(), led)
 		if err != nil {
@@ -66,7 +67,7 @@ func expectedBuyPrice(marketPrice string) decimal.Decimal {
 
 func TestInvalidOrderType(t *testing.T) {
 	v, _ := fixtures(t, "42000")
-	r := v.Validate(order.Order{CustomerID: "C001", OrderType: order.Type("HODL"), Quantity: dec("1"), QuotedPrice: expectedBuyPrice("42000")})
+	r := v.Validate(context.Background(), order.Order{CustomerID: "C001", OrderType: order.Type("HODL"), Quantity: dec("1"), QuotedPrice: expectedBuyPrice("42000")})
 	if !r.HasError(orderval.CodeInvalidOrderType) {
 		t.Fatalf("expected %s, got %+v", orderval.CodeInvalidOrderType, r.Errors)
 	}
@@ -74,7 +75,7 @@ func TestInvalidOrderType(t *testing.T) {
 
 func TestNegativeQuantity(t *testing.T) {
 	v, _ := fixtures(t, "42000")
-	r := v.Validate(order.Order{CustomerID: "C001", OrderType: order.Buy, Quantity: dec("-1"), QuotedPrice: expectedBuyPrice("42000")})
+	r := v.Validate(context.Background(), order.Order{CustomerID: "C001", OrderType: order.Buy, Quantity: dec("-1"), QuotedPrice: expectedBuyPrice("42000")})
 	if !r.HasError(orderval.CodeInvalidQuantity) {
 		t.Fatalf("expected %s, got %+v", orderval.CodeInvalidQuantity, r.Errors)
 	}
@@ -82,7 +83,7 @@ func TestNegativeQuantity(t *testing.T) {
 
 func TestZeroQuantity(t *testing.T) {
 	v, _ := fixtures(t, "42000")
-	r := v.Validate(order.Order{CustomerID: "C001", OrderType: order.Buy, Quantity: dec("0"), QuotedPrice: expectedBuyPrice("42000")})
+	r := v.Validate(context.Background(), order.Order{CustomerID: "C001", OrderType: order.Buy, Quantity: dec("0"), QuotedPrice: expectedBuyPrice("42000")})
 	if !r.HasError(orderval.CodeInvalidQuantity) {
 		t.Fatalf("expected %s, got %+v", orderval.CodeInvalidQuantity, r.Errors)
 	}
@@ -90,7 +91,7 @@ func TestZeroQuantity(t *testing.T) {
 
 func TestQuantityNotMultipleOfIncrement(t *testing.T) {
 	v, _ := fixtures(t, "42000")
-	r := v.Validate(order.Order{CustomerID: "C001", OrderType: order.Buy, Quantity: dec("0.7"), QuotedPrice: expectedBuyPrice("42000")})
+	r := v.Validate(context.Background(), order.Order{CustomerID: "C001", OrderType: order.Buy, Quantity: dec("0.7"), QuotedPrice: expectedBuyPrice("42000")})
 	if !r.HasError(orderval.CodeInvalidQuantityIncr) {
 		t.Fatalf("expected %s, got %+v", orderval.CodeInvalidQuantityIncr, r.Errors)
 	}
@@ -99,7 +100,7 @@ func TestQuantityNotMultipleOfIncrement(t *testing.T) {
 func TestQuantityValidIncrements(t *testing.T) {
 	v, _ := fixtures(t, "42000")
 	for _, q := range []string{"0.5", "1", "1.5", "2.5", "5"} {
-		r := v.Validate(order.Order{CustomerID: "C001", OrderType: order.Buy, Quantity: dec(q), QuotedPrice: expectedBuyPrice("42000")})
+		r := v.Validate(context.Background(), order.Order{CustomerID: "C001", OrderType: order.Buy, Quantity: dec(q), QuotedPrice: expectedBuyPrice("42000")})
 		if r.HasError(orderval.CodeInvalidQuantityIncr) {
 			t.Fatalf("quantity %s should be a valid increment, got %+v", q, r.Errors)
 		}
@@ -108,7 +109,7 @@ func TestQuantityValidIncrements(t *testing.T) {
 
 func TestZeroPriceRejected(t *testing.T) {
 	v, _ := fixtures(t, "42000")
-	r := v.Validate(order.Order{CustomerID: "C001", OrderType: order.Buy, Quantity: dec("1"), QuotedPrice: dec("0")})
+	r := v.Validate(context.Background(), order.Order{CustomerID: "C001", OrderType: order.Buy, Quantity: dec("1"), QuotedPrice: dec("0")})
 	if !r.HasError(orderval.CodeInvalidPrice) {
 		t.Fatalf("expected %s, got %+v", orderval.CodeInvalidPrice, r.Errors)
 	}
@@ -116,7 +117,7 @@ func TestZeroPriceRejected(t *testing.T) {
 
 func TestNegativePriceRejected(t *testing.T) {
 	v, _ := fixtures(t, "42000")
-	r := v.Validate(order.Order{CustomerID: "C001", OrderType: order.Buy, Quantity: dec("1"), QuotedPrice: dec("-5")})
+	r := v.Validate(context.Background(), order.Order{CustomerID: "C001", OrderType: order.Buy, Quantity: dec("1"), QuotedPrice: dec("-5")})
 	if !r.HasError(orderval.CodeInvalidPrice) {
 		t.Fatalf("expected %s, got %+v", orderval.CodeInvalidPrice, r.Errors)
 	}
@@ -124,7 +125,7 @@ func TestNegativePriceRejected(t *testing.T) {
 
 func TestMissingCustomerID(t *testing.T) {
 	v, _ := fixtures(t, "42000")
-	r := v.Validate(order.Order{CustomerID: "", OrderType: order.Buy, Quantity: dec("1"), QuotedPrice: expectedBuyPrice("42000")})
+	r := v.Validate(context.Background(), order.Order{CustomerID: "", OrderType: order.Buy, Quantity: dec("1"), QuotedPrice: expectedBuyPrice("42000")})
 	if !r.HasError(orderval.CodeMissingCustomerID) {
 		t.Fatalf("expected %s, got %+v", orderval.CodeMissingCustomerID, r.Errors)
 	}
@@ -132,7 +133,7 @@ func TestMissingCustomerID(t *testing.T) {
 
 func TestMultipleErrorsCollectedAtOnce(t *testing.T) {
 	v, _ := fixtures(t, "42000")
-	r := v.Validate(order.Order{CustomerID: "", OrderType: order.Type("foo"), Quantity: dec("0"), QuotedPrice: dec("0")})
+	r := v.Validate(context.Background(), order.Order{CustomerID: "", OrderType: order.Type("foo"), Quantity: dec("0"), QuotedPrice: dec("0")})
 	codes := map[string]bool{}
 	for _, e := range r.Errors {
 		codes[e.Code] = true
@@ -146,7 +147,7 @@ func TestMultipleErrorsCollectedAtOnce(t *testing.T) {
 
 func TestBuyInsufficientBalance(t *testing.T) {
 	v, _ := fixtures(t, "42000")
-	r := v.Validate(order.Order{CustomerID: "C002", OrderType: order.Buy, Quantity: dec("1"), QuotedPrice: expectedBuyPrice("42000")})
+	r := v.Validate(context.Background(), order.Order{CustomerID: "C002", OrderType: order.Buy, Quantity: dec("1"), QuotedPrice: expectedBuyPrice("42000")})
 	if !r.HasError(balance.CodeInsufficientBalance) {
 		t.Fatalf("expected %s, got %+v", balance.CodeInsufficientBalance, r.Errors)
 	}
@@ -154,7 +155,7 @@ func TestBuyInsufficientBalance(t *testing.T) {
 
 func TestStalePriceForSell(t *testing.T) {
 	v, _ := fixtures(t, "42000")
-	r := v.Validate(order.Order{CustomerID: "C001", OrderType: order.Sell, Quantity: dec("1"), QuotedPrice: dec("38000")})
+	r := v.Validate(context.Background(), order.Order{CustomerID: "C001", OrderType: order.Sell, Quantity: dec("1"), QuotedPrice: dec("38000")})
 	if !r.HasError(quote.CodeStalePrice) {
 		t.Fatalf("expected %s, got %+v", quote.CodeStalePrice, r.Errors)
 	}
@@ -162,7 +163,7 @@ func TestStalePriceForSell(t *testing.T) {
 
 func TestSellWithinToleranceAccepted(t *testing.T) {
 	v, _ := fixtures(t, "42000")
-	r := v.Validate(order.Order{CustomerID: "C001", OrderType: order.Sell, Quantity: dec("1"), QuotedPrice: dec("41500")})
+	r := v.Validate(context.Background(), order.Order{CustomerID: "C001", OrderType: order.Sell, Quantity: dec("1"), QuotedPrice: dec("41500")})
 	if !r.Valid {
 		t.Fatalf("expected valid, got %+v", r.Errors)
 	}
@@ -170,7 +171,7 @@ func TestSellWithinToleranceAccepted(t *testing.T) {
 
 func TestCustomerNotFoundOnBuy(t *testing.T) {
 	v, _ := fixtures(t, "42000")
-	r := v.Validate(order.Order{CustomerID: "GHOST", OrderType: order.Buy, Quantity: dec("1"), QuotedPrice: expectedBuyPrice("42000")})
+	r := v.Validate(context.Background(), order.Order{CustomerID: "GHOST", OrderType: order.Buy, Quantity: dec("1"), QuotedPrice: expectedBuyPrice("42000")})
 	if !r.HasError(balance.CodeCustomerNotFound) {
 		t.Fatalf("expected %s, got %+v", balance.CodeCustomerNotFound, r.Errors)
 	}
@@ -179,7 +180,7 @@ func TestCustomerNotFoundOnBuy(t *testing.T) {
 func TestMarketUnavailableFailsClosed(t *testing.T) {
 	accounts := balance.NewMemory(map[string]decimal.Decimal{"C001": dec("1000000")})
 	v := mustNew(t, accounts, quote.NewMemory(dec("0")), nil)
-	r := v.Validate(order.Order{CustomerID: "C001", OrderType: order.Buy, Quantity: dec("1"), QuotedPrice: dec("42000")})
+	r := v.Validate(context.Background(), order.Order{CustomerID: "C001", OrderType: order.Buy, Quantity: dec("1"), QuotedPrice: dec("42000")})
 	if !r.HasError(quote.CodeMarketUnavailable) {
 		t.Fatalf("expected %s, got %+v", quote.CodeMarketUnavailable, r.Errors)
 	}
@@ -187,7 +188,7 @@ func TestMarketUnavailableFailsClosed(t *testing.T) {
 
 func TestSpreadIsCalculatedForBuy(t *testing.T) {
 	v, _ := fixtures(t, "42000")
-	r := v.Validate(order.Order{CustomerID: "C001", OrderType: order.Buy, Quantity: dec("1"), QuotedPrice: expectedBuyPrice("42000")})
+	r := v.Validate(context.Background(), order.Order{CustomerID: "C001", OrderType: order.Buy, Quantity: dec("1"), QuotedPrice: expectedBuyPrice("42000")})
 	if !r.Valid {
 		t.Fatalf("expected valid, got %+v", r.Errors)
 	}
@@ -204,7 +205,7 @@ func TestSpreadIsCalculatedForBuy(t *testing.T) {
 
 func TestQuotedBuyPriceWayOffRejected(t *testing.T) {
 	v, _ := fixtures(t, "42000")
-	r := v.Validate(order.Order{CustomerID: "C001", OrderType: order.Buy, Quantity: dec("1"), QuotedPrice: dec("38000")})
+	r := v.Validate(context.Background(), order.Order{CustomerID: "C001", OrderType: order.Buy, Quantity: dec("1"), QuotedPrice: dec("38000")})
 	if !r.HasError(quote.CodeStaleOrOffPrice) {
 		t.Fatalf("expected %s, got %+v", quote.CodeStaleOrOffPrice, r.Errors)
 	}
@@ -212,7 +213,7 @@ func TestQuotedBuyPriceWayOffRejected(t *testing.T) {
 
 func TestDailyLimitExceededByCurrentOrderAlone(t *testing.T) {
 	v, _ := fixtures(t, "42000")
-	r := v.Validate(order.Order{CustomerID: "C001", OrderType: order.Sell, Quantity: dec("5.5"), QuotedPrice: dec("42000")})
+	r := v.Validate(context.Background(), order.Order{CustomerID: "C001", OrderType: order.Sell, Quantity: dec("5.5"), QuotedPrice: dec("42000")})
 	if !r.HasError(limit.CodeDailyLimitExceeded) {
 		t.Fatalf("expected %s, got %+v", limit.CodeDailyLimitExceeded, r.Errors)
 	}
@@ -224,7 +225,7 @@ func TestDailyLimitExceededByCurrentOrderAlone(t *testing.T) {
 func TestDailyLimitExceededAfterPriorOrders(t *testing.T) {
 	v, led := fixtures(t, "42000")
 	led.Record("C001", dec("4.5"), time.Date(2026, 5, 15, 9, 0, 0, 0, time.UTC))
-	r := v.Validate(order.Order{CustomerID: "C001", OrderType: order.Sell, Quantity: dec("1"), QuotedPrice: dec("42000")})
+	r := v.Validate(context.Background(), order.Order{CustomerID: "C001", OrderType: order.Sell, Quantity: dec("1"), QuotedPrice: dec("42000")})
 	if !r.HasError(limit.CodeDailyLimitExceeded) {
 		t.Fatalf("expected %s, got %+v", limit.CodeDailyLimitExceeded, r.Errors)
 	}
@@ -236,7 +237,7 @@ func TestDailyLimitExceededAfterPriorOrders(t *testing.T) {
 func TestDailyLimitExactlyAtBoundaryAllowed(t *testing.T) {
 	v, led := fixtures(t, "42000")
 	led.Record("C001", dec("4.5"), time.Date(2026, 5, 15, 9, 0, 0, 0, time.UTC))
-	r := v.Validate(order.Order{CustomerID: "C001", OrderType: order.Sell, Quantity: dec("0.5"), QuotedPrice: dec("42000")})
+	r := v.Validate(context.Background(), order.Order{CustomerID: "C001", OrderType: order.Sell, Quantity: dec("0.5"), QuotedPrice: dec("42000")})
 	if !r.Valid {
 		t.Fatalf("expected valid (at boundary), got %+v", r.Errors)
 	}
@@ -247,7 +248,7 @@ func TestDailyLimitExactlyAtBoundaryAllowed(t *testing.T) {
 
 func TestValidBuyHappyPath(t *testing.T) {
 	v, _ := fixtures(t, "42000")
-	r := v.Validate(order.Order{CustomerID: "C001", OrderType: order.Buy, Quantity: dec("1"), QuotedPrice: expectedBuyPrice("42000")})
+	r := v.Validate(context.Background(), order.Order{CustomerID: "C001", OrderType: order.Buy, Quantity: dec("1"), QuotedPrice: expectedBuyPrice("42000")})
 	if !r.Valid {
 		t.Fatalf("expected valid, got %+v", r.Errors)
 	}
@@ -258,7 +259,7 @@ func TestValidBuyHappyPath(t *testing.T) {
 
 func TestValidSellHappyPath(t *testing.T) {
 	v, _ := fixtures(t, "42000")
-	r := v.Validate(order.Order{CustomerID: "C001", OrderType: order.Sell, Quantity: dec("2.5"), QuotedPrice: dec("42000")})
+	r := v.Validate(context.Background(), order.Order{CustomerID: "C001", OrderType: order.Sell, Quantity: dec("2.5"), QuotedPrice: dec("42000")})
 	if !r.Valid {
 		t.Fatalf("expected valid, got %+v", r.Errors)
 	}
@@ -270,7 +271,7 @@ func TestValidSellHappyPath(t *testing.T) {
 func TestQuantityAtMaxAllowed(t *testing.T) {
 	v, _ := fixtures(t, "42000")
 	cfg := orderval.DefaultConfig()
-	r := v.Validate(order.Order{CustomerID: "C001", OrderType: order.Sell, Quantity: cfg.MaxQuantity, QuotedPrice: dec("42000")})
+	r := v.Validate(context.Background(), order.Order{CustomerID: "C001", OrderType: order.Sell, Quantity: cfg.MaxQuantity, QuotedPrice: dec("42000")})
 	if r.HasError(orderval.CodeQuantityTooLarge) {
 		t.Fatalf("at-boundary quantity should not trigger %s, got %+v", orderval.CodeQuantityTooLarge, r.Errors)
 	}
@@ -279,7 +280,7 @@ func TestQuantityAtMaxAllowed(t *testing.T) {
 func TestQuantityOneIncrementOverMaxRejected(t *testing.T) {
 	v, _ := fixtures(t, "42000")
 	cfg := orderval.DefaultConfig()
-	r := v.Validate(order.Order{CustomerID: "C001", OrderType: order.Sell, Quantity: cfg.MaxQuantity.Add(cfg.QuantityIncrement), QuotedPrice: dec("42000")})
+	r := v.Validate(context.Background(), order.Order{CustomerID: "C001", OrderType: order.Sell, Quantity: cfg.MaxQuantity.Add(cfg.QuantityIncrement), QuotedPrice: dec("42000")})
 	if !r.HasError(orderval.CodeQuantityTooLarge) {
 		t.Fatalf("expected %s, got %+v", orderval.CodeQuantityTooLarge, r.Errors)
 	}
@@ -287,7 +288,7 @@ func TestQuantityOneIncrementOverMaxRejected(t *testing.T) {
 
 func TestPriceOverMaxRejected(t *testing.T) {
 	v, _ := fixtures(t, "42000")
-	r := v.Validate(order.Order{CustomerID: "C001", OrderType: order.Buy, Quantity: dec("1"), QuotedPrice: dec("99999999")})
+	r := v.Validate(context.Background(), order.Order{CustomerID: "C001", OrderType: order.Buy, Quantity: dec("1"), QuotedPrice: dec("99999999")})
 	if !r.HasError(orderval.CodePriceTooLarge) {
 		t.Fatalf("expected %s, got %+v", orderval.CodePriceTooLarge, r.Errors)
 	}
@@ -297,7 +298,7 @@ func TestCustomerIDAtMaxLengthAllowed(t *testing.T) {
 	v, _ := fixtures(t, "42000")
 	cfg := orderval.DefaultConfig()
 	id := strings.Repeat("a", cfg.MaxCustomerIDLength)
-	r := v.Validate(order.Order{CustomerID: id, OrderType: order.Buy, Quantity: dec("1"), QuotedPrice: expectedBuyPrice("42000")})
+	r := v.Validate(context.Background(), order.Order{CustomerID: id, OrderType: order.Buy, Quantity: dec("1"), QuotedPrice: expectedBuyPrice("42000")})
 	if r.HasError(orderval.CodeInvalidCustomerID) {
 		t.Fatalf("at-boundary ID should not be invalid, got %+v", r.Errors)
 	}
@@ -307,7 +308,7 @@ func TestCustomerIDOverMaxLengthRejected(t *testing.T) {
 	v, _ := fixtures(t, "42000")
 	cfg := orderval.DefaultConfig()
 	id := strings.Repeat("a", cfg.MaxCustomerIDLength+1)
-	r := v.Validate(order.Order{CustomerID: id, OrderType: order.Buy, Quantity: dec("1"), QuotedPrice: expectedBuyPrice("42000")})
+	r := v.Validate(context.Background(), order.Order{CustomerID: id, OrderType: order.Buy, Quantity: dec("1"), QuotedPrice: expectedBuyPrice("42000")})
 	if !r.HasError(orderval.CodeInvalidCustomerID) {
 		t.Fatalf("expected %s, got %+v", orderval.CodeInvalidCustomerID, r.Errors)
 	}
@@ -315,7 +316,7 @@ func TestCustomerIDOverMaxLengthRejected(t *testing.T) {
 
 func TestCustomerIDWithLeadingWhitespaceRejected(t *testing.T) {
 	v, _ := fixtures(t, "42000")
-	r := v.Validate(order.Order{CustomerID: " C001", OrderType: order.Buy, Quantity: dec("1"), QuotedPrice: expectedBuyPrice("42000")})
+	r := v.Validate(context.Background(), order.Order{CustomerID: " C001", OrderType: order.Buy, Quantity: dec("1"), QuotedPrice: expectedBuyPrice("42000")})
 	if !r.HasError(orderval.CodeInvalidCustomerID) {
 		t.Fatalf("expected %s, got %+v", orderval.CodeInvalidCustomerID, r.Errors)
 	}
@@ -323,7 +324,7 @@ func TestCustomerIDWithLeadingWhitespaceRejected(t *testing.T) {
 
 func TestCustomerIDWithControlCharRejected(t *testing.T) {
 	v, _ := fixtures(t, "42000")
-	r := v.Validate(order.Order{CustomerID: "C\x00001", OrderType: order.Buy, Quantity: dec("1"), QuotedPrice: expectedBuyPrice("42000")})
+	r := v.Validate(context.Background(), order.Order{CustomerID: "C\x00001", OrderType: order.Buy, Quantity: dec("1"), QuotedPrice: expectedBuyPrice("42000")})
 	if !r.HasError(orderval.CodeInvalidCustomerID) {
 		t.Fatalf("expected %s, got %+v", orderval.CodeInvalidCustomerID, r.Errors)
 	}
@@ -339,7 +340,7 @@ func TestValidator_ConcurrentValidate(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for j := 0; j < perGoroutine; j++ {
-				_ = v.Validate(order.Order{CustomerID: "C001", OrderType: order.Buy, Quantity: dec("0.5"), QuotedPrice: expectedBuyPrice("42000")})
+				_ = v.Validate(context.Background(), order.Order{CustomerID: "C001", OrderType: order.Buy, Quantity: dec("0.5"), QuotedPrice: expectedBuyPrice("42000")})
 			}
 		}()
 	}

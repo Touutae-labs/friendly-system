@@ -1,6 +1,7 @@
 package repositories_test
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -10,7 +11,7 @@ import (
 
 func TestLedger_TradedToday_Empty(t *testing.T) {
 	repo := repositories.NewLedger(newDB(t))
-	got, err := repo.TradedToday("C001", time.Now())
+	got, err := repo.TradedToday(context.Background(), "C001", time.Now())
 	if err != nil {
 		t.Fatalf("TradedToday: %v", err)
 	}
@@ -21,16 +22,17 @@ func TestLedger_TradedToday_Empty(t *testing.T) {
 
 func TestLedger_RecordThenRead(t *testing.T) {
 	repo := repositories.NewLedger(newDB(t))
+	ctx := context.Background()
 	now := time.Date(2026, 5, 15, 12, 0, 0, 0, time.UTC)
 
-	if err := repo.Record("C001", decimal.RequireFromString("1.5"), now); err != nil {
+	if err := repo.Record(ctx, "C001", decimal.RequireFromString("1.5"), now); err != nil {
 		t.Fatalf("Record: %v", err)
 	}
-	if err := repo.Record("C001", decimal.RequireFromString("2"), now); err != nil {
+	if err := repo.Record(ctx, "C001", decimal.RequireFromString("2"), now); err != nil {
 		t.Fatalf("Record: %v", err)
 	}
 
-	got, err := repo.TradedToday("C001", now)
+	got, err := repo.TradedToday(ctx, "C001", now)
 	if err != nil {
 		t.Fatalf("TradedToday: %v", err)
 	}
@@ -41,17 +43,18 @@ func TestLedger_RecordThenRead(t *testing.T) {
 
 func TestLedger_DayBoundary(t *testing.T) {
 	repo := repositories.NewLedger(newDB(t))
+	ctx := context.Background()
 	yesterday := time.Date(2026, 5, 14, 23, 0, 0, 0, time.UTC)
 	today := time.Date(2026, 5, 15, 1, 0, 0, 0, time.UTC)
 
-	if err := repo.Record("C001", decimal.RequireFromString("3"), yesterday); err != nil {
+	if err := repo.Record(ctx, "C001", decimal.RequireFromString("3"), yesterday); err != nil {
 		t.Fatalf("Record yesterday: %v", err)
 	}
-	if err := repo.Record("C001", decimal.RequireFromString("1"), today); err != nil {
+	if err := repo.Record(ctx, "C001", decimal.RequireFromString("1"), today); err != nil {
 		t.Fatalf("Record today: %v", err)
 	}
 
-	got, err := repo.TradedToday("C001", today)
+	got, err := repo.TradedToday(ctx, "C001", today)
 	if err != nil {
 		t.Fatalf("TradedToday: %v", err)
 	}

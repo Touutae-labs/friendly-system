@@ -1,6 +1,7 @@
 package quote
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/Touutae-labs/friendly-system/domain/common/order"
@@ -61,8 +62,8 @@ func New(cfg Config, provider MarketPriceProvider) (*Validator, error) {
 	return &Validator{cfg: cfg, provider: provider}, nil
 }
 
-func (v *Validator) Apply(o order.Order, res *order.Result) (marketOK bool) {
-	mkt, err := v.provider.CurrentPrice()
+func (v *Validator) Apply(ctx context.Context, o order.Order, res *order.Result) (marketOK bool) {
+	mkt, err := v.provider.CurrentPrice(ctx)
 	if err != nil {
 		res.AddError(CodeMarketUnavailable, "",
 			"current market price is unavailable; cannot validate quote")
