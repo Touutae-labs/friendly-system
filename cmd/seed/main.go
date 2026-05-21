@@ -6,7 +6,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/Touutae-labs/friendly-system/domain/repositories"
+	"github.com/Touutae-labs/friendly-system/internal/models"
 	"github.com/glebarez/sqlite"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
@@ -22,7 +22,7 @@ func main() {
 		log.Fatalf("open %s: %v", *dbPath, err)
 	}
 
-	accounts := []repositories.AccountModel{
+	accounts := []models.AccountModel{
 		{CustomerID: "C001", Balance: decimal.RequireFromString("1000000")},
 		{CustomerID: "C002", Balance: decimal.RequireFromString("500")},
 		{CustomerID: "C003", Balance: decimal.RequireFromString("5000000")},
@@ -35,7 +35,7 @@ func main() {
 	}
 
 	today := time.Now().UTC().Format("2006-01-02")
-	dailyTotal := repositories.DailyTotalModel{
+	dailyTotal := models.DailyTotalModel{
 		CustomerID: "C001",
 		Day:        today,
 		Total:      decimal.RequireFromString("4"),

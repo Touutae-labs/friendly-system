@@ -1,0 +1,24 @@
+server:
+  port: "8080"
+  max_payload_size_kb: 4096
+  timeout_seconds: 30
+  base_url: "http://localhost:8080"
+
+database:
+  path: ""  # empty = in-memory SQLite; set to file path for persistent storage
+
+# Quote / price validation
+quote:
+  spread_margin: "0.005"      # 0.5% added to market price for buy orders
+  price_tolerance: "0.02"     # 2% max deviation from expected price before rejecting
+
+# Daily trading limit
+limit:
+  daily_limit: "5"            # max baht-weight a customer can trade per day
+
+# Order field validation
+orderval:
+  quantity_increment: "0.5"   # orders must be multiples of this (baht-weight)
+  max_quantity: "1000"        # single order cap (baht-weight)
+  max_price: "10000000"       # single order price cap (THB)
+  max_customer_id_length: 64

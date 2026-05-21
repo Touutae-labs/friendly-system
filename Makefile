@@ -34,6 +34,9 @@ seed:
 		--auto-approve
 	go run ./cmd/seed -db ./data.db
 
+db-reset:
+	rm -f ./data.db
+
 wire:
 	wire ./wire
 
