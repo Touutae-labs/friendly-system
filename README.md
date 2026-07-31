@@ -1,6 +1,4 @@
-# Software Engineer Test
-
-Submitted by **Pantakan Totae** (`pantakan.totae@gmail.com`).
+# Software Engineer Pattern
 
 ## Quickstart
 
